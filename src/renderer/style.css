@@ -1,0 +1,69 @@
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+#sprite-mount {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--sprite-width, 200px);
+  height: var(--sprite-height, 240px);
+  cursor: grab;
+}
+
+#sprite-mount.dragging {
+  cursor: grabbing;
+}
+
+#sprite-mount svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#speech-bubble {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 190px;
+  padding: 8px 12px;
+  background: #ffffff;
+  color: #333;
+  border-radius: 14px;
+  font: 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  text-align: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+#speech-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px 6px 0 6px;
+  border-style: solid;
+  border-color: #ffffff transparent transparent transparent;
+}
+
+#speech-bubble.visible {
+  opacity: 1;
+}

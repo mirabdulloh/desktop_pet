@@ -1,0 +1,15 @@
+{
+  "name": "desktop-pet",
+  "version": "0.1.0",
+  "description": "A desktop buddy that lives on your screen, skinned with anime characters. First character: Marin Kitagawa.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "mirabdulloh",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "Marin",
+  "version": "0.1.0",
+  "sprite": "sprite.svg",
+  "stageWidth": 220,
+  "stageHeight": 320,
+  "spriteWidth": 200,
+  "spriteHeight": 240,
+  "lines": {
+    "idle": [
+      "Hmm, what should I cosplay next?",
+      "Don't mind me, just vibing~",
+      "This fabric is NOT cooperating today.",
+      "Hey! Still there?",
+      "I should really finish that wig..."
+    ],
+    "click": [
+      "Hehe, that tickles!",
+      "Wha- hey!",
+      "You rang?",
+      "Oh? What's up?"
+    ],
+    "dragStart": [
+      "Whoa, where are we going?!",
+      "Okay okay, I'm coming!"
+    ]
+  },
+  "idleLineIntervalMs": [6000, 14000]
+}
