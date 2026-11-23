@@ -1,59 +1,57 @@
-# Desktop Pet 🧷
+# Desktop Pet
 
-A little anime desktop buddy that lives on your screen — transparent, always-on-top,
-draggable, and skinned per-character from a `characters/` folder. First character:
-**Marin Kitagawa** (placeholder art for now — see
-[characters/marin-kitagawa/README.md](characters/marin-kitagawa/README.md)).
+A 3D anime desktop buddy that stands on your taskbar or Dock. It loads real
+[VRM](https://vrm.dev/) models, with one character pack per folder in `characters/`.
+The first pack is **Marin**.
 
-See [RESEARCH.md](RESEARCH.md) for the survey of existing desktop-pet projects that this
-design is based on.
+Model files are not included. Import a `.vrm` you have permission to use. It is copied to
+the app's private data folder and is never added to this repository.
 
 ## Run it
 
 ```bash
 npm install
+```
+
+```bash
 npm start
 ```
 
-She'll appear in the bottom-right corner of your screen, bob gently, occasionally say
-something, and can be picked up and dragged around. A tray icon lets you hide/show her,
-switch characters (once there's more than one), or quit.
+Click **Import VRM model** on the card, or use **Import VRM Model…** in the tray menu.
 
-## How it works
+## What it does
 
-- **`src/main.js`** — the Electron main process. Creates a transparent, frameless,
-  always-on-top `BrowserWindow`, a system tray icon/menu, and persists her screen position
-  between runs. Click-through is handled with the standard pattern for this kind of app:
-  the window ignores mouse events by default (so it never steals clicks from whatever's
-  behind it) and the renderer tells it to stop ignoring only while the cursor is actually
-  over the character.
-- **`src/preload.js`** — the small `contextBridge` API (`window.pet`) the renderer uses to
-  talk to the main process.
-- **`src/renderer/`** — loads the current character's sprite, does hit-testing for
-  click-through, handles drag-to-move and click reactions, and shows her speech bubble.
-- **`characters/<id>/`** — one folder per character: `character.json` (name, sizes, lines
-  she says) + its own art. The engine doesn't know anything character-specific; it just
-  toggles `state-idle` / `state-drag` / `state-click` / `state-sleep` classes on the
-  sprite's root element and lets the character's own art/CSS react to them.
+- Head and eyes follow your cursor
+- Blinking, breathing, idle sway and facial expressions
+- Hair and clothes physics from the model's spring bones, reacting to drags and falls
+- Click to wave, rub her head to pet, double-click to jump
+- Drag and throw her, then she falls and bounces onto the taskbar
+- Falls asleep when you're idle
+- Clicks pass through everything except the model's visible pixels
+- Tray menu for character, size, gravity, show/hide and quit
 
-## Adding another character
+## Structure
+
+- `src/main.js`: window, tray, model import, drag and gravity physics
+- `src/preload.js`: the small `window.pet` bridge
+- `src/renderer/app.js`: three.js scene, VRM loading, animation and interactions
+- `characters/<id>/character.json`: name, window size, spoken lines and timing
+
+## Add a character
 
 1. Copy `characters/marin-kitagawa/` to `characters/<new-id>/`.
-2. Edit its `character.json` (name, sizes, lines) and swap in its art.
-3. Restart the app — she shows up in the tray's character picker automatically.
+2. Edit its `character.json`.
+3. Restart, pick it in the tray, and import its VRM model.
 
 ## Roadmap
 
-- [ ] Real art for Marin (swap the placeholder SVG — see her folder's README)
-- [ ] Settings window instead of tray-only controls
-- [ ] Idle "walk" behavior / screen-edge awareness
-- [ ] Optional Live2D rendering via `pixi-live2d-display` for characters that have a rig
-- [ ] Packaging (`electron-builder`) for a double-clickable app
-- [ ] More characters
+- [ ] VRMA animation clips (walk, sit, dance)
+- [ ] Walking along the taskbar and sitting on window edges
+- [ ] Voice and lip sync
+- [ ] Settings window
+- [ ] Packaged app with `electron-builder`
 
 ## License
 
-Code is MIT (see [LICENSE](LICENSE)). Placeholder character art in this repo is original
-and MIT too. If you swap in real character art/models, make sure *you* have the rights to
-it and to redistribute it — see the licensing note in
-[RESEARCH.md](RESEARCH.md#licensing-note-important).
+Code is MIT (see [LICENSE](LICENSE)). Characters and models belong to their owners, so
+check each model's license before using or sharing it.

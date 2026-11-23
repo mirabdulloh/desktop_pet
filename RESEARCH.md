@@ -33,6 +33,13 @@ Searched for an existing fan-made Live2D/VTuber rig of Marin Kitagawa (*My Dress
 
 So for v1, the Marin Kitagawa "skin" ships with a small **original placeholder illustration** (a simple SVG chibi with the right vibe — blonde twin-tails, cosplay-y outfit — but not copied from any official art or screenshot), plus a documented slot (`characters/marin-kitagawa/README.md`) for swapping in real art *you* have the rights to use (your own commission, a licensed asset pack, or your own exported frames). The engine itself doesn't care what's in that folder.
 
+## Update: moved to VRM
+
+The hand-drawn SVG approach above was dropped because it could not reach the required
+quality. The app now renders VRM models with three.js and `@pixiv/three-vrm`, which provide
+anime shading, spring-bone hair, expressions and look-at. This replaces decision 4 and the
+placeholder plan: the repo ships no character art, and users import a model they may use.
+
 ## Sources
 - [guansss/pixi-live2d-display](https://github.com/guansss/pixi-live2d-display)
 - [TSKI433/hime-display](https://github.com/TSKI433/hime-display)

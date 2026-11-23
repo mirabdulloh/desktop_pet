@@ -5,11 +5,17 @@
   "main": "src/main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "build": "esbuild src/renderer/app.js --bundle --format=iife --minify --outfile=src/renderer/bundle.js --log-level=warning",
+    "start": "npm run build && electron ."
   },
   "author": "mirabdulloh",
   "license": "MIT",
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^45.4.1",
+    "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "@pixiv/three-vrm": "^3.5.5",
+    "three": "^0.187.0"
   }
 }

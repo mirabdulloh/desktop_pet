@@ -1,6 +1,8 @@
 node_modules/
 dist/
 out/
+src/renderer/bundle.js
+*.vrm
 *.log
 .DS_Store
 .vscode/
