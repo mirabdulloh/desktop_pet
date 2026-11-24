@@ -140,7 +140,7 @@ then log in from the Telegram window with your API ID, API hash, phone and login
 
 - The session is encrypted on this Mac and never stored in Atlas or this repository.
 - She sends when you click **Send to [name]** on a draft.
-- **Send without asking** (off until you turn it on) sends right away when you tell her to
+- **Send without asking** (on by default, untick it in the window to turn it off) sends right away when you tell her to
   write to someone. If two people match the name, she asks which one first.
 - **Auto-reply**: say "Onamga o'zing javob ber" or press **Auto-reply** on a learned person.
   She waits 12 seconds for more messages, then answers in your style. She stays quiet if you

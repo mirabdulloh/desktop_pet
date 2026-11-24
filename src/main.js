@@ -802,7 +802,7 @@ ipcMain.handle('pet:chat-send', async (_event, text) => {
     const drafted = await telegramStyles.draft(draftCommand.contact, draftCommand.request).catch(() => ({ ok: false }));
     if (!drafted.ok) return { ...result, action: { ok: false, message: "Sorry, I couldn't write that draft." } };
     const recipients = await telegramLive.findContacts(draftCommand.contact).catch(() => []);
-    const recipient = settings.telegramDirectSend === true ? pickRecipient(recipients, drafted.draft.key) : null;
+    const recipient = settings.telegramDirectSend !== false ? pickRecipient(recipients, drafted.draft.key) : null;
     if (recipient) {
       try {
         await telegramLive.send(recipient.key, drafted.draft.text.slice(0, MAX_DRAFT_LENGTH));
@@ -815,10 +815,12 @@ ipcMain.handle('pet:chat-send', async (_event, text) => {
     }
     pendingDraft = { ...drafted.draft, recipients };
     openTelegramWindow();
-    if (settings.telegramDirectSend === true && recipients.length > 1) {
-      return { ...result, action: { ok: false, message: `Which ${draftCommand.contact}? Choose in the window.` } };
-    }
-    return result;
+    if (settings.telegramDirectSend === false) return result;
+    // Explains why she couldn't send by herself, so the window never looks like a needless approval step.
+    let reason = `I couldn't find ${draftCommand.contact} in your Telegram chats. Pick the chat in the window.`;
+    if (!telegramLive.connected) reason = 'Telegram is not connected, so I opened the draft. Log in once in the window.';
+    else if (recipients.length > 1) reason = `Which ${draftCommand.contact}? Choose in the window.`;
+    return { ...result, action: { ok: false, message: reason } };
   }
 
   const autoCommand = parseAutoReplyCommand(raw);
@@ -858,7 +860,7 @@ async function changeAutoReply({ contact, on }) {
 handleTelegramIpc('telegram:state', async () => ({
   connected: memory.connected,
   live: telegramLive.status(),
-  directSend: settings.telegramDirectSend === true,
+  directSend: settings.telegramDirectSend !== false,
   autoReply: autoReplyPeople(),
   autoHistory: autoReplyHistory,
   styles: await telegramStyles.list().catch(() => []),
