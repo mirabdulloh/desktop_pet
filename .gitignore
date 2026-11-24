@@ -2,6 +2,9 @@ node_modules/
 dist/
 out/
 vendor/
+.env
+.env.*
+!.env.example
 src/renderer/bundle.js
 *.vrm
 *.moc3

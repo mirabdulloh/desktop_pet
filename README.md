@@ -104,12 +104,12 @@ Ask her in chat, for example "open YouTube and find lofi music".
 ## Memory
 
 Haru stores long-term memory in your own MongoDB Atlas cluster, in the `desktop_pet`
-database (`memories` and `messages`). Right-click her and choose **Memory...** to connect,
-view notes, delete one, delete everything, or disconnect.
+database (`memories` and `messages`). Put the connection string in a git-ignored `.env` file
+in the project root (see `.env.example`). The app connects at startup and whenever the file
+is saved. Right-click her and choose **Memory...** to view or delete notes.
 
-- Paste a connection string or use **Import from .env file**. The app reads only MongoDB
-  connection values from the file you pick and never displays them.
-- The connection string is encrypted with the macOS Keychain and never added to this repo.
+- `MONGODB_URI` in `.env` takes priority over a connection saved in the Memory window.
+- Connections saved in the window are encrypted with the macOS Keychain.
 - She saves lasting facts, preferences and corrections, and recalls relevant ones per message.
 - Passwords, keys, tokens and card-like numbers are refused or hidden before saving.
 - Saved text lives in your Atlas cluster and relevant notes are sent to the active AI.

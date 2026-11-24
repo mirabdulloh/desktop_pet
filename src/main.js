@@ -80,6 +80,34 @@ function readMongoUri() {
   }
 }
 
+const envPath = () => process.env.PET_ENV_FILE || path.join(__dirname, '..', '.env');
+const memoryStatusPath = () => path.join(app.getPath('userData'), 'memory-status.json');
+let connectedEnvUri = null;
+
+function readEnvMongoUri() {
+  try {
+    const options = findMongoUris(fs.readFileSync(envPath(), 'utf-8'));
+    return (options.find((option) => option.name === 'MONGODB_URI') || options[0])?.uri || null;
+  } catch {
+    return null;
+  }
+}
+
+// Holds only the state and error text, so the connection can be checked without exposing the link.
+function writeMemoryStatus() {
+  const { state, error } = memory.status();
+  fs.writeFileSync(memoryStatusPath(), JSON.stringify({ state, error, at: new Date().toISOString() }));
+}
+
+async function connectFromEnv() {
+  const uri = readEnvMongoUri();
+  if (!uri || uri === connectedEnvUri) return;
+  connectedEnvUri = uri;
+  await memory.connect(uri);
+  writeMemoryStatus();
+  if (!memory.connected) connectedEnvUri = null;
+}
+
 function openMemoryWindow() {
   if (memoryWindow) {
     app.focus({ steal: true });
@@ -729,16 +757,17 @@ if (!app.requestSingleInstanceLock()) {
     refreshTray();
     setInterval(tick, 16);
 
-    const mongoUri = readMongoUri();
-    if (mongoUri) {
-      memory.connect(mongoUri);
-    } else if (!settings.memorySetupShown) {
-      saveSettings({ memorySetupShown: true });
-      openMemoryWindow();
+    if (readEnvMongoUri()) {
+      connectFromEnv();
+    } else {
+      const savedUri = readMongoUri();
+      if (savedUri) memory.connect(savedUri).then(writeMemoryStatus);
     }
+    fs.watchFile(envPath(), { interval: 1500 }, connectFromEnv);
   });
 
   app.on('will-quit', () => {
+    fs.unwatchFile(envPath());
     globalShortcut.unregisterAll();
     memory.disconnect();
   });
