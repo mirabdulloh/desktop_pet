@@ -103,8 +103,8 @@ Ask her in chat, for example "open YouTube and find lofi music".
 
 ## Memory
 
-Haru stores long-term memory in your own MongoDB Atlas cluster, in the `desktop_pet`
-database (`memories` and `messages`). Put the connection string in a git-ignored `.env` file
+Haru stores long-term memory in your own MongoDB Atlas cluster, in the `Haru` database
+(`memory` for notes and `messages` for past conversations). Put the connection string in a git-ignored `.env` file
 in the project root (see `.env.example`). The app connects at startup and whenever the file
 is saved. Right-click her and choose **Memory...** to view or delete notes.
 

@@ -1,6 +1,7 @@
 const { MongoClient, ObjectId } = require('mongodb');
 
-const DB_NAME = 'desktop_pet';
+const DB_NAME = 'Haru';
+const NOTES = 'memory';
 const KINDS = ['fact', 'preference', 'correction'];
 const MAX_MEMORY_LENGTH = 300;
 const MAX_MESSAGE_LENGTH = 4000;
@@ -112,9 +113,9 @@ class Memory {
       const db = client.db(DB_NAME);
       await db.command({ ping: 1 });
       await Promise.all([
-        db.collection('memories').createIndex({ key: 1 }, { unique: true }),
-        db.collection('memories').createIndex({ content: 'text' }, { default_language: 'none' }),
-        db.collection('memories').createIndex({ updatedAt: -1 }),
+        db.collection(NOTES).createIndex({ key: 1 }, { unique: true }),
+        db.collection(NOTES).createIndex({ content: 'text' }, { default_language: 'none' }),
+        db.collection(NOTES).createIndex({ updatedAt: -1 }),
         db.collection('messages').createIndex({ content: 'text' }, { default_language: 'none' }),
         db.collection('messages').createIndex({ createdAt: -1 }),
       ]);
@@ -142,7 +143,7 @@ class Memory {
   async remember(kind, content) {
     if (!this.connected || !KINDS.includes(kind) || containsSecret(content)) return;
     const now = new Date();
-    await this.db.collection('memories').updateOne(
+    await this.db.collection(NOTES).updateOne(
       { key: content.toLocaleLowerCase().replace(/\s+/g, ' ').trim() },
       { $set: { kind, content, updatedAt: now }, $setOnInsert: { createdAt: now } },
       { upsert: true },
@@ -151,7 +152,7 @@ class Memory {
 
   async forget(id) {
     if (!this.connected || !ObjectId.isValid(id)) return false;
-    const result = await this.db.collection('memories').deleteOne({ _id: new ObjectId(id) });
+    const result = await this.db.collection(NOTES).deleteOne({ _id: new ObjectId(id) });
     return result.deletedCount === 1;
   }
 
@@ -173,7 +174,7 @@ class Memory {
 
   async recall(query, session) {
     if (!this.connected) return '';
-    const memories = this.db.collection('memories');
+    const memories = this.db.collection(NOTES);
     const messages = this.db.collection('messages');
     const terms = (query.match(/[\p{L}\p{N}]{2,}/gu) || []).slice(0, 12).join(' ');
     const byScore = { score: { $meta: 'textScore' } };
@@ -211,13 +212,13 @@ class Memory {
 
   async list() {
     if (!this.connected) return [];
-    const items = await this.db.collection('memories').find().sort({ updatedAt: -1 }).limit(500).toArray();
+    const items = await this.db.collection(NOTES).find().sort({ updatedAt: -1 }).limit(500).toArray();
     return items.map((item) => ({ id: String(item._id), kind: item.kind, content: item.content, updatedAt: item.updatedAt.toISOString() }));
   }
 
   async clearAll() {
     if (!this.connected) return;
-    await Promise.all([this.db.collection('memories').deleteMany({}), this.db.collection('messages').deleteMany({})]);
+    await Promise.all([this.db.collection(NOTES).deleteMany({}), this.db.collection('messages').deleteMany({})]);
   }
 }
 
