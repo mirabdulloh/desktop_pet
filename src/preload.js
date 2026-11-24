@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('pet', {
   jump: () => ipcRenderer.send('pet:jump'),
   walk: (dir, distance) => ipcRenderer.send('pet:walk', { dir, distance }),
   showMenu: () => ipcRenderer.send('pet:show-menu'),
+  chatStatus: () => ipcRenderer.invoke('pet:chat-status'),
+  focusWindow: () => ipcRenderer.send('pet:focus'),
   saveApiKey: (key) => ipcRenderer.invoke('pet:save-key', key),
   sendChat: (text) => ipcRenderer.invoke('pet:chat-send', text),
   onChatOpen: listen('pet:chat-open'),

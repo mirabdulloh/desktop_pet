@@ -45,7 +45,7 @@ npm start
 
 ## AI chat
 
-Right-click Haru and choose **Chat with Haru**. The first time, paste an
+Type in the box under Haru. If you close it, click her to bring it back. The first time, paste an
 [Anthropic API key](https://platform.claude.com/settings/keys). It is encrypted with the
 macOS Keychain through Electron `safeStorage`, stored in the app's data folder, and never
 added to this repository. **Remove API Key** in the menu deletes it.

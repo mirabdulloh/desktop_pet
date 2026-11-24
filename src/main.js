@@ -214,6 +214,7 @@ function createWindow() {
     resizable: false,
     hasShadow: false,
     fullscreenable: false,
+    acceptFirstMouse: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -332,6 +333,14 @@ function serveAsset(request) {
 }
 
 ipcMain.handle('pet:get-character', () => character);
+
+ipcMain.handle('pet:chat-status', () => hasCredentials());
+
+ipcMain.on('pet:focus', () => {
+  if (!win) return;
+  app.focus({ steal: true });
+  win.focus();
+});
 
 ipcMain.handle('pet:save-key', (_event, key) => {
   const trimmed = typeof key === 'string' ? key.trim() : '';

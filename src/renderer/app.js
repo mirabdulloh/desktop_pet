@@ -341,6 +341,7 @@ function endPress(event) {
     setMood(onHead ? 'shy' : 'happy', 2000);
     burst('♥', 3);
     sayFrom('click', 1600);
+    if (chatForm.hidden) window.pet.chatStatus().then((hasKey) => showChat(hasKey));
   }
 }
 
@@ -356,7 +357,7 @@ canvas.addEventListener('contextmenu', (event) => {
 });
 window.addEventListener('resize', layout);
 
-function showChat(hasKey) {
+function showChat(hasKey, focus = true) {
   needsKey = !hasKey;
   chatForm.hidden = false;
   chatNote.hidden = !needsKey;
@@ -365,7 +366,10 @@ function showChat(hasKey) {
   chatInput.placeholder = needsKey ? 'API key' : `Message ${character.name}...`;
   chatInput.value = '';
   chatSend.textContent = needsKey ? 'Save' : 'Send';
-  chatInput.focus();
+  if (focus) {
+    window.pet.focusWindow();
+    chatInput.focus();
+  }
   wake();
 }
 
@@ -447,6 +451,7 @@ chatForm.addEventListener('submit', (event) => {
   if (needsKey) saveKey(value);
   else sendMessage(value);
 });
+chatInput.addEventListener('pointerdown', () => window.pet.focusWindow());
 chatInput.addEventListener('input', () => {
   lastActivity = performance.now();
 });
@@ -483,5 +488,6 @@ document.getElementById('chat-close').addEventListener('click', hideChat);
   app.ticker.add(afterRender, null, PIXI.UPDATE_PRIORITY.UTILITY);
 
   sayFrom('greet');
+  showChat(await window.pet.chatStatus(), false);
   nextLine = performance.now() + between(character.idleLineIntervalMs);
 })();
