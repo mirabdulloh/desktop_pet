@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('telegramApi', {
   importExport: () => ipcRenderer.invoke('telegram:import'),
   learn: (keys) => ipcRenderer.invoke('telegram:learn', keys),
   remove: (key) => ipcRenderer.invoke('telegram:remove', key),
+  removeShortcut: (key, short) => ipcRenderer.invoke('telegram:remove-shortcut', key, short),
   copy: (text) => ipcRenderer.invoke('telegram:copy', text),
   openInTelegram: (text) => ipcRenderer.invoke('telegram:open', text),
   discard: () => ipcRenderer.invoke('telegram:discard'),

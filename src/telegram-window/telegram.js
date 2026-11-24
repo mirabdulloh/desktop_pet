@@ -49,6 +49,24 @@ function renderStyles(styles) {
       name.textContent = style.name;
       detail.className = 'detail';
       detail.textContent = style.profile;
+      const stats = document.createElement('div');
+      stats.className = 'detail';
+      stats.textContent = `${style.wordCount} words, ${style.shortcuts.length} shortcuts, ${style.fixCount} of your fixes`;
+      const chips = document.createElement('div');
+      chips.className = 'chips';
+      for (const shortcut of style.shortcuts) {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip';
+        chip.textContent = `${shortcut.short} = ${shortcut.full} ×`;
+        chip.title = shortcut.meaning;
+        chip.setAttribute('aria-label', `Remove wrong shortcut ${shortcut.short} meaning ${shortcut.full}`);
+        chip.addEventListener('click', async () => {
+          await api.removeShortcut(style.key, shortcut.short);
+          render();
+        });
+        chips.append(chip);
+      }
       remove.type = 'button';
       remove.textContent = 'Forget';
       remove.setAttribute('aria-label', `Forget style for ${style.name}`);
@@ -56,7 +74,7 @@ function renderStyles(styles) {
         await api.remove(style.key);
         render();
       });
-      body.append(name, detail);
+      body.append(name, detail, stats, chips);
       row.append(body, remove);
       return row;
     }),
@@ -68,8 +86,10 @@ function renderDraft(draft) {
   if (!draft) return;
   el('draft-title').textContent = `Draft to ${draft.contact}`;
   el('draft-text').value = draft.text;
-  el('draft-note').textContent = `${draft.styled ? 'Written in your style for this contact.' : "No learned style for this contact yet."} Telegram opens with this text. Choose ${draft.contact} and press Send yourself.`;
+  el('draft-note').textContent = `${draft.styled ? 'Written in your style. Fix any wrong word and she learns it.' : 'No learned style for this contact yet.'} Telegram opens with this text. Choose ${draft.contact} and press Send yourself.`;
 }
+
+const learnedNote = (count) => (count ? ` Learned ${count} ${count === 1 ? 'fix' : 'fixes'} from your edit.` : '');
 
 async function render() {
   const state = await api.state();
@@ -107,11 +127,16 @@ el('learn').addEventListener('click', async () => {
 });
 
 el('draft-copy').addEventListener('click', async () => {
-  await api.copy(el('draft-text').value);
-  el('draft-note').textContent = 'Copied. Paste it in Telegram and press Send yourself.';
+  const result = await api.copy(el('draft-text').value);
+  el('draft-note').textContent = `Copied. Paste it in Telegram and press Send yourself.${learnedNote(result.learned)}`;
+  if (result.learned) renderStyles((await api.state()).styles);
 });
 
-el('draft-open').addEventListener('click', () => api.openInTelegram(el('draft-text').value));
+el('draft-open').addEventListener('click', async () => {
+  const result = await api.openInTelegram(el('draft-text').value);
+  el('draft-note').textContent = `Choose the person in Telegram and press Send yourself.${learnedNote(result.learned)}`;
+  if (result.learned) renderStyles((await api.state()).styles);
+});
 
 el('draft-discard').addEventListener('click', async () => {
   await api.discard();

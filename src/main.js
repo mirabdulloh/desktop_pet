@@ -725,16 +725,34 @@ handleTelegramIpc('telegram:learn', async (keys) => {
 });
 
 handleTelegramIpc('telegram:remove', (key) => (typeof key === 'string' ? telegramStyles.remove(key) : null));
-handleTelegramIpc('telegram:copy', (text) => {
-  if (typeof text === 'string') clipboard.writeText(text.slice(0, MAX_DRAFT_LENGTH));
+handleTelegramIpc('telegram:remove-shortcut', (key, short) =>
+  typeof key === 'string' && typeof short === 'string' ? telegramStyles.removeShortcut(key, short) : null);
+
+async function recordDraftEdit(text) {
+  if (!pendingDraft || text === pendingDraft.text) return 0;
+  const learned = pendingDraft.key
+    ? await telegramStyles.learnEdit(pendingDraft.key, pendingDraft.text, text).catch(() => 0)
+    : 0;
+  pendingDraft = { ...pendingDraft, text };
+  return learned;
+}
+
+handleTelegramIpc('telegram:copy', async (text) => {
+  if (typeof text !== 'string') return { learned: 0 };
+  const value = text.slice(0, MAX_DRAFT_LENGTH);
+  clipboard.writeText(value);
+  return { learned: await recordDraftEdit(value) };
 });
 handleTelegramIpc('telegram:discard', () => {
   pendingDraft = null;
 });
 // This link only fills in the text. The user picks the chat and presses Send in Telegram.
 handleTelegramIpc('telegram:open', async (text) => {
-  if (typeof text !== 'string' || !text.trim()) return;
-  await shell.openExternal(`tg://msg?text=${encodeURIComponent(text.slice(0, MAX_DRAFT_LENGTH))}`);
+  if (typeof text !== 'string' || !text.trim()) return { learned: 0 };
+  const value = text.slice(0, MAX_DRAFT_LENGTH);
+  const learned = await recordDraftEdit(value);
+  await shell.openExternal(`tg://msg?text=${encodeURIComponent(value)}`);
+  return { learned };
 });
 
 handleMemoryIpc('memory:status', () => memory.status());

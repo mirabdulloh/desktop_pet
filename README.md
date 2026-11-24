@@ -122,8 +122,12 @@ Right-click Haru and choose **Telegram...**, then import `result.json` from Tele
 (**Settings > Advanced > Export Telegram data**, JSON format, personal chats, no media).
 
 - Select the chats she may learn from. Only your own messages are sent to the AI.
-- She saves a short style summary per contact in `Haru.telegram_styles`, not the chats.
+- She counts your real words, phrases and habits on this Mac, then learns Uzbek shortcuts
+  only when they appear in your messages and their meaning is clear.
+- `Haru.telegram_styles` keeps the style, common words, shortcuts and fixes, not the chats.
 - Ask in chat, for example "write to Ali that I'll be late". A draft opens for you to edit.
+- When you fix a word in a draft, she remembers that word-level correction for that contact.
+- Click a learned shortcut in the Telegram window to remove it if it is wrong.
 - **Open in Telegram** fills in the text. You choose the chat and press Send yourself.
 
 ## Roadmap
