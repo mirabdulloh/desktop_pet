@@ -121,7 +121,8 @@ is saved. Right-click her and choose **Memory...** to view or delete notes.
 Right-click Haru and choose **Telegram...**, then import `result.json` from Telegram Desktop
 (**Settings > Advanced > Export Telegram data**, JSON format, personal chats, no media).
 
-- Select the chats she may learn from. Only your own messages are sent to the AI.
+- Select the chats she may learn from. She studies your messages and how you reply. The
+  other person's messages are sent to the AI only as context for your replies.
 - She counts your real words, phrases and habits on this Mac, then learns Uzbek shortcuts
   only when they appear in your messages and their meaning is clear.
 - `Haru.telegram_styles` keeps the style, common words, shortcuts and fixes, not the chats.

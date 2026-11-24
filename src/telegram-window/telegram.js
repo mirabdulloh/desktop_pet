@@ -76,7 +76,11 @@ function renderStyles(styles) {
         await api.remove(style.key);
         render();
       });
-      body.append(name, detail, stats, chips);
+      const replies = document.createElement('div');
+      replies.className = 'detail';
+      replies.textContent = style.replyHabits ? `How you reply: ${style.replyHabits}` : '';
+      stats.textContent += `, ${style.pairCount} replies studied`;
+      body.append(name, detail, replies, stats, chips);
       row.append(body, remove);
       return row;
     }),
