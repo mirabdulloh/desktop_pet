@@ -16,6 +16,7 @@
     "esbuild": "^0.28.2"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.13.0",
     "@pixi/unsafe-eval": "^6.5.10",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^6.5.10"

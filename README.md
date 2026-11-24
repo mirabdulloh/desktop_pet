@@ -37,17 +37,30 @@ npm start
 ## Structure
 
 - `src/main.js`: window, tray, drag, gravity, walking and local asset serving
+- `src/chat.js`: streaming Claude conversation
 - `src/preload.js`: the small `window.pet` bridge
 - `src/renderer/app.js`: Live2D rendering, reactions and speech
 - `characters/<id>/character.json`: name, size, expressions, moods and lines
 - `tools/setup-live2d.js`: downloads the runtime and model into the git-ignored `vendor/`
 
-`speak(text)` and `setMood(name)` in `app.js` are the entry points for future AI chat. The
-speech bubble types the reply and her mouth moves with it.
+## AI chat
+
+Right-click Haru and choose **Chat with Haru**. The first time, paste an
+[Anthropic API key](https://platform.claude.com/settings/keys). It is encrypted with the
+macOS Keychain through Electron `safeStorage`, stored in the app's data folder, and never
+added to this repository. **Remove API Key** in the menu deletes it.
+
+- Replies come from Claude Opus 5.5 (`claude-opus-5-5`) at low effort and stream into her
+  speech bubble while her mouth moves. API usage is billed to your Anthropic account.
+- Each reply starts with a mood tag that sets her expression.
+- The conversation lasts until you quit or choose **Clear Chat**. It is not saved to disk.
+- Server-side refusal fallback is on, so a declined request can be retried on another model.
+- Her personality is the `persona` field in `characters/haru/character.json`.
 
 ## Roadmap
 
-- [ ] AI chat and voice with lip sync
+- [ ] Voice input and spoken replies with lip sync
+- [ ] Long-term memory between sessions
 - [ ] Name each gesture and group them by mood
 - [ ] Load any Live2D model from the tray
 - [ ] Settings window

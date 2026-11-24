@@ -9,6 +9,18 @@ Live2DModel.registerTicker(PIXI.Ticker);
 const canvas = document.getElementById('stage');
 const bubble = document.getElementById('speech-bubble');
 const particles = document.getElementById('particles');
+const chatForm = document.getElementById('chat');
+const chatInput = document.getElementById('chat-input');
+const chatNote = document.getElementById('chat-note');
+const chatSend = document.getElementById('chat-send');
+
+const CHAT_ERRORS = {
+  rate: 'Too many messages right now. Try again in a moment.',
+  connection: "I can't reach the internet right now.",
+  billing: 'Your API account needs credits before I can reply.',
+  refused: "Sorry, I can't talk about that.",
+  other: 'Something went wrong. Please try again.',
+};
 
 const DRAG_THRESHOLD = 4;
 const TOP_ROOM = 0.1;
@@ -50,6 +62,8 @@ let hideTimer = null;
 let expressionTimer = null;
 let talkingUntil = 0;
 let lastInteractive = null;
+let needsKey = false;
+let chatBusy = false;
 
 const randomFrom = (list) => (list && list.length ? list[Math.floor(Math.random() * list.length)] : null);
 const between = ([min, max]) => min + Math.random() * (max - min);
@@ -161,7 +175,7 @@ function updateSprings(dt) {
 }
 
 function chooseAction(now) {
-  if (motion !== 'rest' || sleeping || press || now < nextAction) return;
+  if (motion !== 'rest' || sleeping || press || now < nextAction || !chatForm.hidden) return;
   nextAction = now + between(character.idleActionMs);
   if (Math.random() < 0.25) {
     window.pet.walk(Math.random() < 0.5 ? -1 : 1, 60 + Math.random() * 160);
@@ -177,7 +191,16 @@ function chooseAction(now) {
 function updateHit() {
   const inside = cursor.x >= 0 && cursor.y >= 0 && cursor.x < innerWidth && cursor.y < innerHeight;
   let over = Boolean(press);
-  if (!press && inside) {
+  const chatBox = chatForm.hidden ? null : chatForm.getBoundingClientRect();
+  if (
+    chatBox &&
+    cursor.x >= chatBox.left &&
+    cursor.x <= chatBox.right &&
+    cursor.y >= chatBox.top &&
+    cursor.y <= chatBox.bottom
+  ) {
+    over = true;
+  } else if (!press && inside) {
     const gl = app.renderer.gl;
     const ratio = app.renderer.resolution;
     const pixel = new Uint8Array(4);
@@ -332,6 +355,105 @@ canvas.addEventListener('contextmenu', (event) => {
   window.pet.showMenu();
 });
 window.addEventListener('resize', layout);
+
+function showChat(hasKey) {
+  needsKey = !hasKey;
+  chatForm.hidden = false;
+  chatNote.hidden = !needsKey;
+  chatNote.textContent = needsKey ? 'Paste your Anthropic API key. It is stored encrypted on this Mac.' : '';
+  chatInput.type = needsKey ? 'password' : 'text';
+  chatInput.placeholder = needsKey ? 'API key' : `Message ${character.name}...`;
+  chatInput.value = '';
+  chatSend.textContent = needsKey ? 'Save' : 'Send';
+  chatInput.focus();
+  wake();
+}
+
+function hideChat() {
+  chatForm.hidden = true;
+  chatInput.value = '';
+}
+
+function showReply(text) {
+  clearInterval(typeTimer);
+  clearTimeout(hideTimer);
+  bubble.textContent = text;
+  bubble.classList.add('visible');
+  bubble.scrollTop = bubble.scrollHeight;
+}
+
+async function saveKey(key) {
+  const result = await window.pet.saveApiKey(key);
+  if (result.ok) {
+    showChat(true);
+    speak('Thanks! What do you want to talk about?');
+  } else {
+    chatNote.textContent = result.error === 'storage' ? 'Secure storage is unavailable on this computer.' : 'Paste a valid key.';
+  }
+}
+
+async function sendMessage(text) {
+  chatBusy = true;
+  chatSend.disabled = true;
+  chatInput.value = '';
+  showReply('...');
+
+  let raw = '';
+  let started = false;
+  let stopDelta = false;
+  activeDelta = (delta) => {
+    if (stopDelta) return;
+    raw += delta;
+    if (raw.startsWith('[') && !raw.includes(']')) return;
+    const tag = raw.match(/^\[(\w+)\]\s*/);
+    if (!started) {
+      started = true;
+      if (tag && tag[1] !== 'neutral') setMood(tag[1], 5000);
+      else setExpression(null);
+      model.motion('Gesture', Math.floor(Math.random() * character.gestureCount), MotionPriority.NORMAL);
+    }
+    const shown = tag ? raw.slice(tag[0].length) : raw;
+    if (shown) showReply(shown);
+    talkingUntil = performance.now() + 420;
+  };
+
+  const result = await window.pet.sendChat(text);
+  stopDelta = true;
+  chatBusy = false;
+  chatSend.disabled = false;
+  lastActivity = performance.now();
+  if (!chatForm.hidden) chatInput.focus();
+
+  if (result.ok) {
+    hideTimer = setTimeout(() => bubble.classList.remove('visible'), 4000 + raw.length * 45);
+  } else if (result.error === 'auth') {
+    showChat(false);
+    chatNote.textContent = 'That API key did not work. Paste a valid key.';
+    bubble.classList.remove('visible');
+  } else if (result.error !== 'cancelled') {
+    setMood('sad', 2500);
+    speak(CHAT_ERRORS[result.error] || CHAT_ERRORS.other, 3500);
+  }
+}
+
+let activeDelta = null;
+window.pet.onChatDelta((delta) => activeDelta?.(delta));
+window.pet.onChatOpen(({ hasKey }) => showChat(hasKey));
+
+chatForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const value = chatInput.value.trim();
+  if (!value || chatBusy || !model) return;
+  if (needsKey) saveKey(value);
+  else sendMessage(value);
+});
+chatInput.addEventListener('input', () => {
+  lastActivity = performance.now();
+});
+chatInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') hideChat();
+});
+document.getElementById('chat-close').addEventListener('click', hideChat);
 
 (async () => {
   character = await window.pet.getCharacter();

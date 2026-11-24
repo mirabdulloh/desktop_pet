@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, dialog, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { Chat } = require('./chat');
 
 const CHARACTERS_DIR = path.join(__dirname, '..', 'characters');
 const LIVE2D_DIR = path.join(__dirname, '..', 'vendor', 'live2d');
@@ -12,6 +13,7 @@ const MAX_THROW_SPEED = 45;
 const WALK_SPEED = 1.15;
 const SCALES = { Small: 0.75, Medium: 1, Large: 1.3 };
 const CONTENT_TYPES = { '.json': 'application/json', '.png': 'image/png', '.moc3': 'application/octet-stream' };
+const MAX_CHAT_LENGTH = 2000;
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'pet-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -28,6 +30,34 @@ let walk = null;
 let interactive = false;
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+const keyPath = () => path.join(app.getPath('userData'), 'api-key.bin');
+
+function readApiKey() {
+  try {
+    return safeStorage.decryptString(fs.readFileSync(keyPath()));
+  } catch {
+    return null;
+  }
+}
+
+const hasCredentials = () =>
+  fs.existsSync(keyPath()) || Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+
+const chat = new Chat(() => (fs.existsSync(keyPath()) ? readApiKey() : null));
+
+function openChat() {
+  if (!win) return;
+  win.show();
+  app.focus({ steal: true });
+  win.focus();
+  send('pet:chat-open', { hasKey: hasCredentials() });
+}
+
+function removeApiKey() {
+  fs.rmSync(keyPath(), { force: true });
+  chat.clear();
+  send('pet:chat-open', { hasKey: hasCredentials() });
+}
 
 function loadSettings() {
   try {
@@ -207,6 +237,7 @@ function createWindow() {
 }
 
 function switchCharacter(id) {
+  chat.clear();
   character = loadCharacter(id);
   saveSettings({ characterId: id });
   drag = null;
@@ -235,6 +266,10 @@ function actionItems() {
     click: () => send('pet:action', { type: 'expression', id }),
   }));
   return [
+    { label: `Chat with ${character.name}`, click: openChat },
+    { label: 'Clear Chat', click: () => chat.clear() },
+    { label: 'Remove API Key', enabled: fs.existsSync(keyPath()), click: removeApiKey },
+    { type: 'separator' },
     { label: 'Random Gesture', click: () => send('pet:action', { type: 'gesture' }) },
     { label: 'Gestures', submenu: gestures },
     { label: 'Expressions', submenu: expressions },
@@ -297,6 +332,22 @@ function serveAsset(request) {
 }
 
 ipcMain.handle('pet:get-character', () => character);
+
+ipcMain.handle('pet:save-key', (_event, key) => {
+  const trimmed = typeof key === 'string' ? key.trim() : '';
+  if (!trimmed) return { ok: false, error: 'empty' };
+  if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: 'storage' };
+  fs.mkdirSync(path.dirname(keyPath()), { recursive: true });
+  fs.writeFileSync(keyPath(), safeStorage.encryptString(trimmed), { mode: 0o600 });
+  refreshTray();
+  return { ok: true };
+});
+
+ipcMain.handle('pet:chat-send', (_event, text) => {
+  const message = typeof text === 'string' ? text.trim().slice(0, MAX_CHAT_LENGTH) : '';
+  if (!message) return { ok: false, error: 'empty' };
+  return chat.send(character.persona, message, (delta) => send('pet:chat-delta', delta));
+});
 
 ipcMain.on('pet:set-interactive', (_event, value) => {
   if (!win || value === interactive) return;
