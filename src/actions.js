@@ -2,7 +2,7 @@ const { execFile } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { app, dialog, shell } = require('electron');
+const { app, dialog, net, shell } = require('electron');
 
 const MAX_VALUE_LENGTH = 200;
 const APP_FOLDERS = ['/Applications', '/System/Applications', path.join(os.homedir(), 'Applications')];
@@ -25,10 +25,11 @@ const ACTION_PROMPT = `
 
 You can do these things on the user's computer, only when their latest message asks for it. Add exactly one command at the very end of your reply:
 <<action {"type":"youtube","value":"search words"}>> opens YouTube search results. Use an empty value for the YouTube home page.
+<<action {"type":"play","value":"search words"}>> finds the top YouTube result and starts playing it. Use this whenever the user asks to play, press, start or put on a song or video. Choose specific search words, such as a well-known song and artist, when they ask for "the best" one.
 <<action {"type":"google","value":"search words"}>> opens Google search results.
 <<action {"type":"website","value":"example.com"}>> opens a website.
 <<action {"type":"app","value":"Calculator"}>> opens an installed app by name.
-Say briefly what you are opening. You can't click, type, play a specific video, read pages, or see the result. Never add a command unless the user asked.`;
+For YouTube requests always use youtube or play, never website. These reuse the YouTube tab that is already open. Say briefly what you are doing. You can't pause, skip, click other buttons, type into pages, read pages, or see the result. Never add a command unless the user asked.`;
 
 const chromiumScript = (name) => `
 on run argv
@@ -37,25 +38,29 @@ on run argv
   if not (application "${name}" is running) then return "none"
   tell application "${name}"
     repeat with w in windows
-      if my matches(URL of active tab of w, prefixes) then
-        set URL of active tab of w to targetUrl
-        set index of w to 1
-        activate
-        return "reused"
-      end if
-    end repeat
-    repeat with w in windows
-      set tabIndex to 0
-      repeat with t in tabs of w
-        set tabIndex to tabIndex + 1
-        if my matches(URL of t, prefixes) then
-          set URL of t to targetUrl
-          set active tab index of w to tabIndex
+      try
+        if my matches(URL of active tab of w, prefixes) then
+          set URL of active tab of w to targetUrl
           set index of w to 1
           activate
           return "reused"
         end if
-      end repeat
+      end try
+    end repeat
+    repeat with w in windows
+      try
+        set tabIndex to 0
+        repeat with t in tabs of w
+          set tabIndex to tabIndex + 1
+          if my matches(URL of t, prefixes) then
+            set URL of t to targetUrl
+            set active tab index of w to tabIndex
+            set index of w to 1
+            activate
+            return "reused"
+          end if
+        end repeat
+      end try
     end repeat
   end tell
   return "none"
@@ -117,7 +122,9 @@ async function reuseBrowserTab(url, prefixes) {
   const script = id === 'com.apple.safari' ? SAFARI_SCRIPT : CHROMIUM_BROWSERS[id] && chromiumScript(CHROMIUM_BROWSERS[id]);
   if (!script) return false;
   return new Promise((resolve) => {
-    execFile('/usr/bin/osascript', ['-e', script, url, ...prefixes], { timeout: 6000 }, (error, stdout) => {
+    // The long timeout leaves time to answer the macOS permission prompt.
+    execFile('/usr/bin/osascript', ['-e', script, url, ...prefixes], { timeout: 30000 }, (error, stdout, stderr) => {
+      if (error) console.warn('Tab reuse failed:', stderr.trim().slice(0, 160));
       resolve(!error && stdout.trim() === 'reused');
     });
   });
@@ -125,6 +132,17 @@ async function reuseBrowserTab(url, prefixes) {
 
 async function openInBrowser(url, prefixes) {
   if (!(await reuseBrowserTab(url, prefixes))) await shell.openExternal(url);
+}
+
+async function findTopVideo(query) {
+  const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+  const response = await net.fetch(url, {
+    headers: { 'accept-language': 'en-US,en;q=0.9' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) return null;
+  const match = (await response.text()).match(/"videoRenderer":\{"videoId":"([\w-]{11})"/);
+  return match ? match[1] : null;
 }
 
 function createActionFilter(emit) {
@@ -151,8 +169,9 @@ function parseAction(reply) {
   if (!match) return null;
   try {
     const { type, value = '' } = JSON.parse(match[1]);
-    if (!['youtube', 'google', 'website', 'app'].includes(type)) return null;
+    if (!['youtube', 'play', 'google', 'website', 'app'].includes(type)) return null;
     if (typeof value !== 'string' || value.length > MAX_VALUE_LENGTH) return null;
+    if (type === 'play' && !value.trim()) return null;
     return { type, value: value.trim() };
   } catch {
     return null;
@@ -203,11 +222,28 @@ async function runAction(action) {
       const query = encodeURIComponent(action.value);
       const url = query ? `https://www.youtube.com/results?search_query=${query}` : 'https://www.youtube.com/';
       await openInBrowser(url, YOUTUBE_PREFIXES);
+    } else if (action.type === 'play') {
+      let videoId = null;
+      try {
+        videoId = await findTopVideo(action.value);
+      } catch {
+        videoId = null;
+      }
+      if (!videoId) {
+        const results = `https://www.youtube.com/results?search_query=${encodeURIComponent(action.value)}`;
+        await openInBrowser(results, YOUTUBE_PREFIXES);
+        return { ok: false, message: "I couldn't start it, so I opened the search results." };
+      }
+      await openInBrowser(`https://www.youtube.com/watch?v=${videoId}&autoplay=1`, YOUTUBE_PREFIXES);
     } else if (action.type === 'google') {
       await openInBrowser(`https://www.google.com/search?q=${encodeURIComponent(action.value)}`, GOOGLE_PREFIXES);
     } else if (action.type === 'website') {
       const url = safeWebsite(action.value);
       if (!url) return { ok: false, message: "I can only open secure https websites." };
+      if (['www.youtube.com', 'youtube.com', 'm.youtube.com'].includes(url.hostname)) {
+        await openInBrowser(url.href, YOUTUBE_PREFIXES);
+        return { ok: true };
+      }
       if (!(await confirm(`Open this website?\n\n${url.href}`))) return { ok: false, message: "Okay, I won't open it." };
       await shell.openExternal(url.href);
     } else {
@@ -222,4 +258,4 @@ async function runAction(action) {
   }
 }
 
-module.exports = { ACTION_PROMPT, createActionFilter, parseAction, reuseBrowserTab, runAction, safeWebsite };
+module.exports = { ACTION_PROMPT, createActionFilter, findTopVideo, parseAction, reuseBrowserTab, runAction, safeWebsite };
