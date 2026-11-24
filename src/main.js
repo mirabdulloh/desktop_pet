@@ -10,7 +10,10 @@ const BOUNCE = 0.32;
 const AIR_DRAG = 0.992;
 const FLOOR_FRICTION = 0.8;
 const MAX_THROW_SPEED = 45;
-const WALK_SPEED = 1.15;
+const HOP_DISTANCE = 30;
+const HOP_CROUCH_FRAMES = 7;
+const HOP_AIR_FRAMES = 18;
+const HOP_LAND_FRAMES = 9;
 const SCALES = { Small: 0.75, Medium: 1, Large: 1.3 };
 const CONTENT_TYPES = { '.json': 'application/json', '.png': 'image/png', '.moc3': 'application/octet-stream' };
 const MAX_CHAT_LENGTH = 2000;
@@ -155,15 +158,33 @@ function stepPhysics() {
 function stepWalk() {
   const area = workArea();
   const maxX = area.x + area.width - windowSize().width;
-  pos.x += walk.dir * WALK_SPEED;
-  walk.remaining -= WALK_SPEED;
-  if (walk.remaining <= 0 || pos.x <= area.x || pos.x >= maxX) {
-    pos.x = Math.min(Math.max(pos.x, area.x), maxX);
-    walk = null;
-    send('pet:motion', { type: 'walk-end' });
-    savePosition();
+  const hopFrames = HOP_CROUCH_FRAMES + HOP_AIR_FRAMES + HOP_LAND_FRAMES;
+  const inAir = walk.frame >= HOP_CROUCH_FRAMES && walk.frame < HOP_CROUCH_FRAMES + HOP_AIR_FRAMES;
+  if (inAir) {
+    const step = HOP_DISTANCE / HOP_AIR_FRAMES;
+    pos.x = Math.min(Math.max(pos.x + walk.dir * step, area.x), maxX);
+    walk.remaining -= step;
+  }
+  walk.frame += 1;
+  if (walk.frame >= hopFrames) {
+    walk.frame = 0;
+    if (walk.remaining <= 0 || pos.x <= area.x || pos.x >= maxX) {
+      walk = null;
+      send('pet:motion', { type: 'walk-end' });
+      savePosition();
+    }
   }
   applyPosition();
+}
+
+function hopState() {
+  if (!walk) return null;
+  const { frame, dir } = walk;
+  if (frame < HOP_CROUCH_FRAMES) return { stage: 'crouch', t: frame / HOP_CROUCH_FRAMES, dir };
+  if (frame < HOP_CROUCH_FRAMES + HOP_AIR_FRAMES) {
+    return { stage: 'air', t: (frame - HOP_CROUCH_FRAMES) / HOP_AIR_FRAMES, dir };
+  }
+  return { stage: 'land', t: (frame - HOP_CROUCH_FRAMES - HOP_AIR_FRAMES) / HOP_LAND_FRAMES, dir };
 }
 
 function tick() {
@@ -185,6 +206,7 @@ function tick() {
   send('pet:tick', {
     cursor: { x: cursor.x - pos.x, y: cursor.y - pos.y },
     window: { x: pos.x, y: pos.y },
+    hop: hopState(),
   });
 }
 
@@ -402,7 +424,7 @@ ipcMain.on('pet:jump', () => {
 
 ipcMain.on('pet:walk', (_event, { dir, distance }) => {
   if (drag || motion || walk) return;
-  walk = { dir: dir < 0 ? -1 : 1, remaining: Math.min(Math.max(distance, 0), 400) };
+  walk = { dir: dir < 0 ? -1 : 1, remaining: Math.min(Math.max(distance, 0), 400), frame: 0 };
   send('pet:motion', { type: 'walk', dir: walk.dir });
 });
 

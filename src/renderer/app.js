@@ -24,6 +24,7 @@ const CHAT_ERRORS = {
 
 const DRAG_THRESHOLD = 4;
 const TOP_ROOM = 0.1;
+const ARM_SWAP_SECONDS = 0.07;
 
 const app = new PIXI.Application({
   view: canvas,
@@ -46,7 +47,23 @@ let sway = 0;
 let swayVelocity = 0;
 let squash = 1;
 let squashVelocity = 0;
-let walkPhase = 0;
+let squashTarget = 1;
+let swing = 0;
+let swingVelocity = 0;
+let previousVelocityX = 0;
+let grabPoint = null;
+let hop = null;
+let hopLift = 0;
+let lean = 0;
+let sleepAmount = 0;
+let talkOpen = 0;
+let talkTarget = 0;
+let nextTalkShape = 0;
+let blinkStart = -1;
+let nextBlink = performance.now() + 2200;
+let glance = { x: 0, y: 0 };
+let nextGlance = 0;
+let lastGesture = -1;
 
 let motion = 'rest';
 let press = null;
@@ -102,7 +119,11 @@ function setExpression(id, ms = 0) {
 const setMood = (mood, ms) => setExpression(character.moods[mood], ms);
 
 function playGesture(index) {
-  const chosen = index ?? Math.floor(Math.random() * character.gestureCount);
+  let chosen = index;
+  while (chosen === undefined || (index === undefined && chosen === lastGesture)) {
+    chosen = Math.floor(Math.random() * character.gestureCount);
+  }
+  lastGesture = chosen;
   model.motion('Gesture', chosen, MotionPriority.FORCE);
 }
 
@@ -144,34 +165,114 @@ function layout() {
   model.position.set(innerWidth / 2, innerHeight);
 }
 
-function applyParameters() {
+const drift = (t, a, b, c) => (Math.sin(t * a) + Math.sin(t * b + 1.7) * 0.6 + Math.sin(t * c + 4.1) * 0.3) / 1.9;
+
+function applyParameters(dt) {
   const now = performance.now();
+  const t = now / 1000;
+
   if (now < talkingUntil) {
-    core.setParameterValueById('ParamMouthOpenY', 0.25 + Math.abs(Math.sin(now / 62)) * 0.65);
+    if (now > nextTalkShape) {
+      talkTarget = 0.15 + Math.random() * 0.8;
+      nextTalkShape = now + 70 + Math.random() * 90;
+    }
+  } else {
+    talkTarget = 0;
   }
-  core.addParameterValueById('ParamBodyAngleX', clamp(sway * 9, -10, 10));
-  core.addParameterValueById('ParamAngleZ', clamp(sway * 13, -24, 24));
-  if (motion === 'walk') {
-    core.addParameterValueById('ParamBodyAngleZ', Math.sin(walkPhase) * 4);
-    core.addParameterValueById('ParamBodyAngleY', Math.abs(Math.sin(walkPhase)) * 4);
+  talkOpen += (talkTarget - talkOpen) * Math.min(dt * 24, 1);
+  if (talkOpen > 0.02) {
+    core.setParameterValueById('ParamMouthOpenY', Math.max(core.getParameterValueById('ParamMouthOpenY'), talkOpen));
   }
+
+  const focus = model.internalModel.focusController;
+  core.addParameterValueById('ParamEyeBallX', (focus.targetX - focus.x) * 0.7 + focus.targetX * 0.35);
+  core.addParameterValueById('ParamEyeBallY', (focus.targetY - focus.y) * 0.7 + focus.targetY * 0.35);
+
+  const awake = 1 - sleepAmount;
+  core.addParameterValueById('ParamBodyAngleX', clamp(sway * 9, -10, 10) + lean * 5 + drift(t, 0.31, 0.53, 0.97) * 1.6 * awake);
+  core.addParameterValueById('ParamBodyAngleZ', lean * 5 + drift(t, 0.23, 0.47, 0.83) * 1.3 * awake);
+  core.addParameterValueById('ParamAngleZ', clamp(sway * 13, -24, 24) + lean * 4 + drift(t, 0.37, 0.61, 1.13) * 2.2 * awake);
+  core.addParameterValueById('ParamBodyAngleY', -hopLift * 3 - sleepAmount * 5);
+  core.addParameterValueById('ParamAngleY', -sleepAmount * 22);
+
+  let eyes = 1 - sleepAmount;
+  if (blinkStart < 0 && now > nextBlink) blinkStart = now;
+  if (blinkStart >= 0) {
+    const progress = (now - blinkStart) / 150;
+    if (progress >= 1) {
+      blinkStart = -1;
+      nextBlink = now + (Math.random() < 0.18 ? 220 : 1800 + Math.random() * 4600);
+    } else {
+      eyes *= 1 - Math.sin(progress * Math.PI);
+    }
+  }
+  core.multiplyParameterValueById('ParamEyeLOpen', eyes);
+  core.multiplyParameterValueById('ParamEyeROpen', eyes);
+}
+
+function updateGaze(now) {
+  const focus = model.internalModel.focusController;
   if (sleeping) {
-    core.setParameterValueById('ParamEyeLOpen', 0);
-    core.setParameterValueById('ParamEyeROpen', 0);
-    core.addParameterValueById('ParamAngleY', -22);
-    core.addParameterValueById('ParamBodyAngleY', -5);
+    focus.focus(0, -0.1);
+    return;
   }
+  if (now > nextGlance) {
+    glance = Math.random() < 0.35 ? { x: 0, y: 0 } : { x: (Math.random() - 0.5) * 0.7, y: (Math.random() - 0.5) * 0.3 };
+    nextGlance = now + 1500 + Math.random() * 4000;
+  }
+  const soft = (value) => value / (Math.abs(value) + 260);
+  const tracking = now - lastActivity < 2500;
+  const x = tracking ? soft(cursor.x - innerWidth / 2) * 0.62 : glance.x;
+  const y = tracking ? soft(innerHeight * 0.24 - cursor.y) * 0.45 : glance.y;
+  focus.focus(clamp(x + (hop ? hop.dir * 0.3 : 0), -1, 1), y);
 }
 
 function updateSprings(dt) {
-  const target = clamp(velocity.x * 0.05, -1, 1);
-  swayVelocity += ((target - sway) * 90 - swayVelocity * 9) * dt;
+  const swayTarget = clamp(velocity.x * 0.05, -1, 1);
+  swayVelocity += ((swayTarget - sway) * 90 - swayVelocity * 9) * dt;
   sway += swayVelocity * dt;
-  squashVelocity += ((1 - squash) * 260 - squashVelocity * 11) * dt;
+
+  let liftTarget = 0;
+  squashTarget = 1;
+  if (hop?.stage === 'crouch') squashTarget = 0.94;
+  if (hop?.stage === 'air') {
+    liftTarget = Math.sin(hop.t * Math.PI);
+    squashTarget = 1.035;
+  }
+  if (hop?.stage === 'land') squashTarget = 1 - 0.06 * (1 - hop.t);
+  if (motion === 'fall') squashTarget = clamp(1 + velocity.y * 0.0025, 0.98, 1.07);
+  if (motion === 'drag') squashTarget = 1.03;
+  hopLift += (liftTarget - hopLift) * Math.min(dt * 30, 1);
+  lean += ((hop ? hop.dir : 0) - lean) * Math.min(dt * 7, 1);
+  sleepAmount += ((sleeping ? 1 : 0) - sleepAmount) * Math.min(dt * 2.4, 1);
+
+  squashVelocity += ((squashTarget - squash) * 260 - squashVelocity * 11) * dt;
   squash += squashVelocity * dt;
-  const bob = motion === 'walk' ? Math.abs(Math.sin(walkPhase)) * 5 : 0;
+  squash = clamp(squash, 0.78, 1.2);
+
+  // A pendulum driven by window acceleration makes her hang from where she is held.
+  const held = motion === 'drag' || motion === 'fall';
+  const acceleration = clamp(velocity.x - previousVelocityX, -40, 40);
+  previousVelocityX = velocity.x;
+  swingVelocity += held ? -acceleration * 0.32 : 0;
+  swingVelocity += (-swing * (held ? 34 : 70) - swingVelocity * (held ? 3.6 : 11)) * dt;
+  swing = clamp(swing + swingVelocity * dt, -0.3, 0.3);
+  if (!held && !press && Math.abs(swing) < 0.004) {
+    swing = 0;
+    swingVelocity = 0;
+    grabPoint = null;
+  }
+
+  const footX = innerWidth / 2;
+  const footY = innerHeight - hopLift * 15 * (innerHeight / 440);
+  const pivot = grabPoint || { x: footX, y: footY };
+  const cos = Math.cos(swing);
+  const sin = Math.sin(swing);
+  const fx = footX - pivot.x;
+  const fy = footY - pivot.y;
+  model.rotation = swing;
+  model.position.set(pivot.x + fx * cos - fy * sin, pivot.y + fx * sin + fy * cos);
   model.scale.set(baseScale * (2 - squash), baseScale * squash);
-  model.position.y = innerHeight - bob;
 }
 
 function chooseAction(now) {
@@ -248,7 +349,6 @@ function update() {
   if (!model) return;
   const now = performance.now();
   const dt = Math.min(app.ticker.deltaMS / 1000, 0.05);
-  if (motion === 'walk') walkPhase += dt * 9;
   if (!sleeping && motion === 'rest' && now - lastActivity > character.sleepAfterMs) {
     sleeping = true;
     bubble.classList.remove('visible');
@@ -257,8 +357,7 @@ function update() {
   if (sleeping && Math.random() < dt * 0.55) burst('z', 1, 'sleep');
   chooseAction(now);
   updateSprings(dt);
-  if (sleeping) model.focus(model.x, model.y);
-  else model.focus(cursor.x, cursor.y);
+  updateGaze(now);
 }
 
 let hitFrame = 0;
@@ -268,8 +367,9 @@ function afterRender() {
   if (hitFrame % 2 === 0) updatePetting(updateHit(), app.ticker.deltaMS / 500);
 }
 
-window.pet.onTick(({ cursor: nextCursor, window: position }) => {
+window.pet.onTick(({ cursor: nextCursor, window: position, hop: nextHop }) => {
   cursor = nextCursor;
+  hop = nextHop;
   if (win) velocity = { x: position.x - win.x, y: position.y - win.y };
   win = position;
 });
@@ -317,6 +417,7 @@ canvas.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;
   canvas.setPointerCapture(event.pointerId);
   press = { x: event.screenX, y: event.screenY, dragging: false };
+  grabPoint = { x: event.clientX, y: event.clientY };
 });
 
 canvas.addEventListener('pointermove', (event) => {
@@ -488,7 +589,15 @@ document.getElementById('chat-close').addEventListener('click', hideChat);
   model.anchor.set(0.5, 1);
   app.stage.addChild(model);
   layout();
-  model.internalModel.on('afterMotionUpdate', applyParameters);
+  // This hook runs after parameters are saved and before physics, so offsets can't accumulate and hair still reacts.
+  const internal = model.internalModel;
+  // Haru's pose file sets no fade time, and the slow default shows both arm sets as see-through.
+  if (internal.pose) internal.pose._fadeTimeSeconds = ARM_SWAP_SECONDS;
+  const updateNaturalMovements = internal.updateNaturalMovements.bind(internal);
+  internal.updateNaturalMovements = (dt, now) => {
+    updateNaturalMovements(dt, now);
+    applyParameters(dt / 1000);
+  };
   app.ticker.add(update, null, PIXI.UPDATE_PRIORITY.HIGH);
   app.ticker.add(afterRender, null, PIXI.UPDATE_PRIORITY.UTILITY);
 
