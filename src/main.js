@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, dialog } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -8,6 +8,7 @@ const BOUNCE = 0.32;
 const AIR_DRAG = 0.992;
 const FLOOR_FRICTION = 0.8;
 const MAX_THROW_SPEED = 45;
+const WALK_SPEED = 1.15;
 const SCALES = { Small: 0.75, Medium: 1, Large: 1.3 };
 
 let win = null;
@@ -17,10 +18,10 @@ let settings = {};
 let pos = { x: 0, y: 0 };
 let drag = null;
 let motion = null;
+let walk = null;
 let interactive = false;
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
-const modelPath = (id) => path.join(app.getPath('userData'), 'models', `${id}.vrm`);
 
 function loadSettings() {
   try {
@@ -43,8 +44,9 @@ function listCharacterIds() {
 }
 
 function loadCharacter(id) {
-  const file = path.join(CHARACTERS_DIR, id, 'character.json');
-  return { ...JSON.parse(fs.readFileSync(file, 'utf-8')), id };
+  const dir = path.join(CHARACTERS_DIR, id);
+  const config = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf-8'));
+  return { ...config, id, svg: fs.readFileSync(path.join(dir, config.puppet), 'utf-8') };
 }
 
 function windowSize() {
@@ -105,6 +107,20 @@ function stepPhysics() {
   applyPosition();
 }
 
+function stepWalk() {
+  const area = workArea();
+  const maxX = area.x + area.width - windowSize().width;
+  pos.x += walk.dir * WALK_SPEED;
+  walk.remaining -= WALK_SPEED;
+  if (walk.remaining <= 0 || pos.x <= area.x || pos.x >= maxX) {
+    pos.x = Math.min(Math.max(pos.x, area.x), maxX);
+    walk = null;
+    send('pet:motion', { type: 'walk-end' });
+    saveSettings({ x: Math.round(pos.x), y: Math.round(pos.y) });
+  }
+  applyPosition();
+}
+
 function tick() {
   if (!win || win.isDestroyed() || !win.isVisible()) return;
   const cursor = screen.getCursorScreenPoint();
@@ -117,6 +133,8 @@ function tick() {
     applyPosition();
   } else if (motion) {
     stepPhysics();
+  } else if (walk) {
+    stepWalk();
   }
 
   send('pet:tick', {
@@ -171,24 +189,12 @@ function createWindow() {
   win.setIgnoreMouseEvents(true);
   interactive = false;
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.webContents.once('did-finish-load', () => {
+    if (settings.gravity !== false && pos.y < floorY()) startFall();
+  });
   win.on('closed', () => {
     win = null;
   });
-}
-
-async function importModel() {
-  app.focus({ steal: true });
-  const { canceled, filePaths } = await dialog.showOpenDialog({
-    title: `Choose a VRM model for ${character.name}`,
-    filters: [{ name: 'VRM model', extensions: ['vrm'] }],
-    properties: ['openFile'],
-  });
-  if (canceled || !filePaths[0]) return;
-
-  const target = modelPath(character.id);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(filePaths[0], target);
-  send('pet:model-changed');
 }
 
 function switchCharacter(id) {
@@ -196,6 +202,7 @@ function switchCharacter(id) {
   saveSettings({ characterId: id });
   drag = null;
   motion = null;
+  walk = null;
   if (win) win.destroy();
   createWindow();
   refreshTray();
@@ -229,7 +236,6 @@ function refreshTray() {
       { type: 'separator' },
       ...characters,
       { type: 'separator' },
-      { label: 'Import VRM Model…', click: importModel },
       { label: 'Size', submenu: sizes },
       {
         label: 'Gravity',
@@ -249,13 +255,6 @@ function refreshTray() {
 
 ipcMain.handle('pet:get-character', () => character);
 
-ipcMain.handle('pet:read-model', () => {
-  const file = modelPath(character.id);
-  return fs.existsSync(file) ? fs.readFileSync(file) : null;
-});
-
-ipcMain.handle('pet:import-model', importModel);
-
 ipcMain.on('pet:set-interactive', (_event, value) => {
   if (!win || value === interactive) return;
   interactive = value;
@@ -265,6 +264,7 @@ ipcMain.on('pet:set-interactive', (_event, value) => {
 ipcMain.on('pet:drag-start', () => {
   const cursor = screen.getCursorScreenPoint();
   motion = null;
+  walk = null;
   drag = { offsetX: cursor.x - pos.x, offsetY: cursor.y - pos.y, samples: [] };
   send('pet:motion', { type: 'drag' });
 });
@@ -287,7 +287,14 @@ ipcMain.on('pet:drag-end', () => {
 
 ipcMain.on('pet:jump', () => {
   if (drag || motion || settings.gravity === false) return;
+  walk = null;
   startFall((Math.random() - 0.5) * 4, -13);
+});
+
+ipcMain.on('pet:walk', (_event, { dir, distance }) => {
+  if (drag || motion || walk) return;
+  walk = { dir: dir < 0 ? -1 : 1, remaining: Math.min(Math.max(distance, 0), 400) };
+  send('pet:motion', { type: 'walk', dir: walk.dir });
 });
 
 if (!app.requestSingleInstanceLock()) {
@@ -297,7 +304,7 @@ if (!app.requestSingleInstanceLock()) {
     if (app.dock) app.dock.hide();
     settings = loadSettings();
     const ids = listCharacterIds();
-    character = loadCharacter(ids.includes(settings.characterId) ? settings.characterId : 'marin-kitagawa');
+    character = loadCharacter(ids.includes(settings.characterId) ? settings.characterId : 'suzu');
     createWindow();
 
     tray = new Tray(path.join(__dirname, '..', 'build', 'tray.png'));

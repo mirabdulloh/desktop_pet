@@ -13,9 +13,5 @@
   "devDependencies": {
     "electron": "^45.4.1",
     "esbuild": "^0.28.2"
-  },
-  "dependencies": {
-    "@pixiv/three-vrm": "^3.5.5",
-    "three": "^0.187.0"
   }
 }

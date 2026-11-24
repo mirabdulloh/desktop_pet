@@ -81,6 +81,13 @@ and poses, but no walk, idle or sit. Those would come from Mixamo or licensed BO
 3. Keep the art separate. A from-scratch Marin needs an artist's commission (Live2D chibi
    is the best fit). Original characters can be built from scratch in this project.
 
+## Decision: original 2D puppet
+
+The project now uses Suzu, an original layered SVG character, with our own engine: springs
+per joint, noise-driven idle motion, anticipation in action clips, fake-3D face parallax and
+gaze with quick eye jumps. The VRM renderer and Marin pack were removed. The app no longer
+depends on third-party character files, so it can be published.
+
 ## Sources
 - [guansss/pixi-live2d-display](https://github.com/guansss/pixi-live2d-display)
 - [TSKI433/hime-display](https://github.com/TSKI433/hime-display)
