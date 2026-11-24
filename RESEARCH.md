@@ -40,6 +40,47 @@ quality. The app now renders VRM models with three.js and `@pixiv/three-vrm`, wh
 anime shading, spring-bone hair, expressions and look-at. This replaces decision 4 and the
 placeholder plan: the repo ships no character art, and users import a model they may use.
 
+## Research round 3: size and robotic motion
+
+**Why the current version feels robotic:** every movement is a hand-written sine wave or a
+fixed pose, so it repeats exactly and all joints start and stop together.
+
+### What makes motion look natural
+
+| Technique | What it adds | Source |
+|---|---|---|
+| Motion-capture clips | Real human weight and timing | [Mixamo to VRM retargeter](https://github.com/saori-eth/vrm-mixamo-retargeter), [three-vrm discussion #1088](https://github.com/pixiv/three-vrm/discussions/1088) |
+| Rest-pose-aware retargeting | Prevents twisted arms and flipped legs | [paprika3d guide](https://paprika3d.com/docs/guides/threejs-retarget-mixamo-animation) |
+| Near-critically damped springs | Smooth starts and stops, no snapping | [UE5 procedural animation guide](https://www.strayspark.studio/blog/procedural-animation-ik-ue57-guide) |
+| Spring chains | Hair and clothes trail behind the body | [Procedural animation notes](https://github.com/Artmann/super/issues/41) |
+| Noise instead of sine waves | Idle sway that never visibly loops | [Procedural animation notes](https://github.com/Artmann/super/issues/41) |
+| Physics tied to head turns | Hair reacts to every movement | [Live2D physics manual](https://docs.live2d.com/en/cubism-editor-manual/physics-operation/) |
+
+No source covered idle eye-movement timing, so that part needs testing by eye.
+
+### Character formats
+
+| Format | Size and feel | Best for | Catch |
+|---|---|---|---|
+| VRM 3D (current) | Tall, 20 MB model | Free clips, any angle | Needs good motion to avoid stiffness |
+| Live2D | Very expressive anime faces | The classic premium look | Needs layered art and a rigger |
+| Spine 2D | Light skeletal animation | Chibi pets | Paid editor, needs art |
+| Sprite or WebM video | Lightest | Hand-animated chibi | Every action must be drawn |
+
+Reference projects: [Live2Pet](https://github.com/receyuki/live2pet),
+[daidai-live2d-pet](https://github.com/CookieWYQ/daidai-live2d-pet),
+[Laurtiv27/desktop-pet](https://github.com/Laurtiv27/desktop-pet).
+
+Free clips: the official [VRoid 7-pack](https://vroid.booth.pm/items/5512385) has greetings
+and poses, but no walk, idle or sit. Those would come from Mixamo or licensed BOOTH packs.
+
+### Recommendation
+
+1. Write our own motion engine: mocap clips, crossfades, springs and noise.
+2. Default to a much smaller size.
+3. Keep the art separate. A from-scratch Marin needs an artist's commission (Live2D chibi
+   is the best fit). Original characters can be built from scratch in this project.
+
 ## Sources
 - [guansss/pixi-live2d-display](https://github.com/guansss/pixi-live2d-display)
 - [TSKI433/hime-display](https://github.com/TSKI433/hime-display)
