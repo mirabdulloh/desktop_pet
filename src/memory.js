@@ -53,6 +53,19 @@ function parseMemoryCommands(reply) {
   return commands;
 }
 
+function findMongoUris(envText) {
+  const found = [];
+  for (const line of envText.split(/\r?\n/)) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_]\w*)\s*=\s*(.*)$/);
+    if (!match) continue;
+    const raw = match[2].trim();
+    const quoted = raw.match(/^(["'])(.*?)\1/);
+    const value = quoted ? quoted[2] : raw.split(/\s+#/)[0].trim();
+    if (/^mongodb(\+srv)?:\/\//.test(value)) found.push({ name: match[1], uri: value });
+  }
+  return found;
+}
+
 function describeConnectionError(error) {
   const text = `${error.name} ${error.message}`;
   if (error.code === 18 || /authentication failed|bad auth/i.test(text)) {
@@ -208,4 +221,4 @@ class Memory {
   }
 }
 
-module.exports = { MEMORY_PROMPT, Memory, containsSecret, parseMemoryCommands, redactSecrets };
+module.exports = { MEMORY_PROMPT, Memory, containsSecret, findMongoUris, parseMemoryCommands, redactSecrets };

@@ -15,7 +15,7 @@ const path = require('path');
 const fs = require('fs');
 const { Chat } = require('./chat');
 const { ACTION_PROMPT, createActionFilter, parseAction, runAction } = require('./actions');
-const { MEMORY_PROMPT, Memory } = require('./memory');
+const { MEMORY_PROMPT, Memory, findMongoUris } = require('./memory');
 
 const CHARACTERS_DIR = path.join(__dirname, '..', 'characters');
 const LIVE2D_DIR = path.join(__dirname, '..', 'vendor', 'live2d');
@@ -34,6 +34,7 @@ const SCALES = { Small: 0.75, Medium: 1, Large: 1.3 };
 const CONTENT_TYPES = { '.json': 'application/json', '.png': 'image/png', '.moc3': 'application/octet-stream' };
 const MAX_CHAT_LENGTH = 2000;
 const RECALL_TIMEOUT_MS = 2500;
+const MAX_ENV_FILE_BYTES = 256 * 1024;
 const KEYS = {
   goLeft: 'Control+Alt+Left',
   goRight: 'Control+Alt+Right',
@@ -587,13 +588,38 @@ handleMemoryIpc('memory:status', () => memory.status());
 handleMemoryIpc('memory:list', () => memory.list());
 handleMemoryIpc('memory:remove', (id) => (typeof id === 'string' ? memory.forget(id) : false));
 
-handleMemoryIpc('memory:connect', async (uri) => {
+async function connectMemory(uri) {
   const value = typeof uri === 'string' ? uri.trim() : '';
   if (!/^mongodb(\+srv)?:\/\//.test(value)) return { ok: false, error: 'That connection string is not valid.' };
   if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: 'Secure storage is unavailable on this Mac.' };
   const result = await memory.connect(value);
   if (result.ok) fs.writeFileSync(mongoPath(), safeStorage.encryptString(value), { mode: 0o600 });
   return result;
+}
+
+handleMemoryIpc('memory:connect', connectMemory);
+
+handleMemoryIpc('memory:import-env', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(memoryWindow, {
+    title: 'Choose a .env file',
+    defaultPath: app.getPath('desktop'),
+    properties: ['openFile', 'showHiddenFiles'],
+  });
+  if (canceled || !filePaths[0]) return { ok: false, cancelled: true };
+  if (fs.statSync(filePaths[0]).size > MAX_ENV_FILE_BYTES) return { ok: false, error: 'That file is too large to be a .env file.' };
+
+  const options = findMongoUris(fs.readFileSync(filePaths[0], 'utf-8'));
+  if (!options.length) return { ok: false, error: 'No MongoDB connection string found in that file.' };
+  if (options.length === 1) return connectMemory(options[0].uri);
+
+  const names = options.map((option) => option.name);
+  const { response } = await dialog.showMessageBox(memoryWindow, {
+    type: 'question',
+    buttons: [...names, 'Cancel'],
+    cancelId: names.length,
+    message: 'Which connection should Haru use?',
+  });
+  return response === names.length ? { ok: false, cancelled: true } : connectMemory(options[response].uri);
 });
 
 handleMemoryIpc('memory:disconnect', async () => {

@@ -107,6 +107,8 @@ Haru stores long-term memory in your own MongoDB Atlas cluster, in the `desktop_
 database (`memories` and `messages`). Right-click her and choose **Memory...** to connect,
 view notes, delete one, delete everything, or disconnect.
 
+- Paste a connection string or use **Import from .env file**. The app reads only MongoDB
+  connection values from the file you pick and never displays them.
 - The connection string is encrypted with the macOS Keychain and never added to this repo.
 - She saves lasting facts, preferences and corrections, and recalls relevant ones per message.
 - Passwords, keys, tokens and card-like numbers are refused or hidden before saving.

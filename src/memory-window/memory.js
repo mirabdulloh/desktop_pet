@@ -67,6 +67,18 @@ connectForm.addEventListener('submit', async (event) => {
   if (!result.ok) showError(result.error);
 });
 
+const importButton = document.getElementById('import-button');
+importButton.addEventListener('click', async () => {
+  importButton.disabled = true;
+  connectButton.disabled = true;
+  showError('');
+  const result = await window.memoryApi.importEnv();
+  importButton.disabled = false;
+  connectButton.disabled = false;
+  await render();
+  if (!result.ok && !result.cancelled) showError(result.error);
+});
+
 document.getElementById('clear').addEventListener('click', async () => {
   await window.memoryApi.clearAll();
   renderList();
