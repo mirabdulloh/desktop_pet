@@ -8,6 +8,10 @@ const MAX_VALUE_LENGTH = 200;
 const APP_FOLDERS = ['/Applications', '/System/Applications', path.join(os.homedir(), 'Applications')];
 const YOUTUBE_PREFIXES = ['https://www.youtube.com/', 'https://youtube.com/', 'https://m.youtube.com/'];
 const GOOGLE_PREFIXES = ['https://www.google.com/search'];
+const VIDEO_ID = /^[\w-]{11}$/;
+const INITIAL_DATA_MARKER = 'var ytInitialData = ';
+const LOOKUP_ATTEMPTS = 3;
+const SKIPPED_RESULT_TYPES = new Set(['adSlotRenderer', 'promotedVideoRenderer', 'reelShelfRenderer', 'gridShelfViewModel']);
 const CHROMIUM_BROWSERS = {
   'com.google.chrome': 'Google Chrome',
   'com.brave.browser': 'Brave Browser',
@@ -176,15 +180,62 @@ async function openInBrowser(url, prefixes) {
   if (!(await reuseBrowserTab(url, prefixes))) await shell.openExternal(url);
 }
 
+function firstVideoIn(node) {
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const found = firstVideoIn(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (!node || typeof node !== 'object') return null;
+  if (VIDEO_ID.test(node.videoRenderer?.videoId || '')) return node.videoRenderer.videoId;
+  const lockup = node.lockupViewModel;
+  if (lockup?.contentType === 'LOCKUP_CONTENT_TYPE_VIDEO' && VIDEO_ID.test(lockup.contentId || '')) return lockup.contentId;
+  for (const [key, value] of Object.entries(node)) {
+    if (SKIPPED_RESULT_TYPES.has(key)) continue;
+    const found = firstVideoIn(value);
+    if (found) return found;
+  }
+  return null;
+}
+
+// YouTube serves more than one results layout, so the page data is walked instead of matching one format.
+function extractVideoId(html) {
+  const start = html.indexOf(INITIAL_DATA_MARKER);
+  if (start >= 0) {
+    const from = start + INITIAL_DATA_MARKER.length;
+    const end = html.indexOf(';</script>', from);
+    try {
+      const data = JSON.parse(html.slice(from, end));
+      const found = firstVideoIn(data.contents?.twoColumnSearchResultsRenderer?.primaryContents);
+      if (found) return found;
+    } catch {
+      // Falls through to the plain text match.
+    }
+  }
+  const match = html.match(/"videoRenderer":\{"videoId":"([\w-]{11})"/) || html.match(/"watchEndpoint":\{"videoId":"([\w-]{11})"/);
+  return match ? match[1] : null;
+}
+
 async function findTopVideo(query) {
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-  const response = await net.fetch(url, {
-    headers: { 'accept-language': 'en-US,en;q=0.9' },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!response.ok) return null;
-  const match = (await response.text()).match(/"videoRenderer":\{"videoId":"([\w-]{11})"/);
-  return match ? match[1] : null;
+  for (let attempt = 0; attempt < LOOKUP_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await net.fetch(url, {
+        headers: { 'accept-language': 'en-US,en;q=0.9' },
+        signal: AbortSignal.timeout(12000),
+      });
+      if (response.ok) {
+        const videoId = extractVideoId(await response.text());
+        if (videoId) return videoId;
+      }
+    } catch (error) {
+      console.warn('Video lookup failed:', error.name);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return null;
 }
 
 async function readYouTubeTab() {
@@ -328,6 +379,7 @@ async function runAction(action) {
 module.exports = {
   ACTION_PROMPT,
   createActionFilter,
+  extractVideoId,
   findTopVideo,
   parseAction,
   resolveVideo,
