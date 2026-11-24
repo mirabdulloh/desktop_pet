@@ -10,10 +10,12 @@ const {
   safeStorage,
   globalShortcut,
 } = require('electron');
+const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const { Chat } = require('./chat');
 const { ACTION_PROMPT, createActionFilter, parseAction, runAction } = require('./actions');
+const { MEMORY_PROMPT, Memory } = require('./memory');
 
 const CHARACTERS_DIR = path.join(__dirname, '..', 'characters');
 const LIVE2D_DIR = path.join(__dirname, '..', 'vendor', 'live2d');
@@ -31,6 +33,7 @@ const RISE_PIXELS_PER_FRAME = 7;
 const SCALES = { Small: 0.75, Medium: 1, Large: 1.3 };
 const CONTENT_TYPES = { '.json': 'application/json', '.png': 'image/png', '.moc3': 'application/octet-stream' };
 const MAX_CHAT_LENGTH = 2000;
+const RECALL_TIMEOUT_MS = 2500;
 const KEYS = {
   goLeft: 'Control+Alt+Left',
   goRight: 'Control+Alt+Right',
@@ -60,9 +63,64 @@ let walk = null;
 let rise = null;
 let interactive = false;
 let unavailableKeys = [];
+let memoryWindow = null;
+let chatSession = crypto.randomUUID();
+const memory = new Memory();
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const keyPath = () => path.join(app.getPath('userData'), 'api-key.bin');
+const mongoPath = () => path.join(app.getPath('userData'), 'mongo-uri.bin');
+
+function readMongoUri() {
+  try {
+    return safeStorage.decryptString(fs.readFileSync(mongoPath()));
+  } catch {
+    return null;
+  }
+}
+
+function openMemoryWindow() {
+  if (memoryWindow) {
+    app.focus({ steal: true });
+    memoryWindow.show();
+    memoryWindow.focus();
+    return;
+  }
+  memoryWindow = new BrowserWindow({
+    width: 520,
+    height: 560,
+    minWidth: 400,
+    minHeight: 380,
+    title: "Haru's Memory",
+    webPreferences: {
+      preload: path.join(__dirname, 'memory-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  memoryWindow.setMenuBarVisibility(false);
+  memoryWindow.loadFile(path.join(__dirname, 'memory-window', 'index.html'));
+  memoryWindow.on('closed', () => {
+    memoryWindow = null;
+  });
+  app.focus({ steal: true });
+}
+
+function clearChat() {
+  chat.clear();
+  chatSession = crypto.randomUUID();
+}
+
+function handleMemoryIpc(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!memoryWindow || event.sender !== memoryWindow.webContents) throw new Error('Not allowed');
+    return handler(...args);
+  });
+}
+
+const withTimeout = (promise, ms, fallback) =>
+  Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(fallback), ms))]);
 
 function readApiKey() {
   try {
@@ -333,7 +391,7 @@ function createWindow() {
 }
 
 function switchCharacter(id) {
-  chat.clear();
+  clearChat();
   character = loadCharacter(id);
   saveSettings({ characterId: id });
   drag = null;
@@ -364,7 +422,8 @@ function actionItems() {
   }));
   return [
     { label: `Chat with ${character.name}`, accelerator: KEYS.chat, registerAccelerator: false, click: openChat },
-    { label: 'Clear Chat', click: () => chat.clear() },
+    { label: 'Clear Chat', click: clearChat },
+    { label: 'Memory...', click: openMemoryWindow },
     { label: 'Remove API Key', enabled: fs.existsSync(keyPath()), click: removeApiKey },
     { type: 'separator' },
     {
@@ -505,11 +564,53 @@ ipcMain.handle('pet:save-key', (_event, key) => {
 ipcMain.handle('pet:chat-send', async (_event, text) => {
   const message = typeof text === 'string' ? text.trim().slice(0, MAX_CHAT_LENGTH) : '';
   if (!message) return { ok: false, error: 'empty' };
+  const session = chatSession;
+  const context = await withTimeout(memory.recall(message, session).catch(() => ''), RECALL_TIMEOUT_MS, '');
   const filter = createActionFilter((delta) => send('pet:chat-delta', delta));
-  const result = await chat.send(character.persona + ACTION_PROMPT, message, filter.push);
+  const system = character.persona + ACTION_PROMPT + MEMORY_PROMPT;
+  const result = await chat.send(system, context, message, filter.push);
   if (!result.ok) return result;
-  const action = parseAction(filter.raw());
+
+  const raw = filter.raw();
+  const spoken = raw.replace(/<<[^\n]*?>>/g, '').replace(/^\[\w+\]\s*/, '').trim();
+  // Saving runs in the background so a slow database never delays her reply.
+  memory
+    .applyCommands(raw)
+    .then(() => memory.saveExchange(session, message, spoken))
+    .catch((error) => console.warn('Memory save failed:', error.name));
+
+  const action = parseAction(raw);
   return action ? { ...result, action: await runAction(action) } : result;
+});
+
+handleMemoryIpc('memory:status', () => memory.status());
+handleMemoryIpc('memory:list', () => memory.list());
+handleMemoryIpc('memory:remove', (id) => (typeof id === 'string' ? memory.forget(id) : false));
+
+handleMemoryIpc('memory:connect', async (uri) => {
+  const value = typeof uri === 'string' ? uri.trim() : '';
+  if (!/^mongodb(\+srv)?:\/\//.test(value)) return { ok: false, error: 'That connection string is not valid.' };
+  if (!safeStorage.isEncryptionAvailable()) return { ok: false, error: 'Secure storage is unavailable on this Mac.' };
+  const result = await memory.connect(value);
+  if (result.ok) fs.writeFileSync(mongoPath(), safeStorage.encryptString(value), { mode: 0o600 });
+  return result;
+});
+
+handleMemoryIpc('memory:disconnect', async () => {
+  await memory.disconnect();
+  fs.rmSync(mongoPath(), { force: true });
+});
+
+handleMemoryIpc('memory:clear', async () => {
+  const { response } = await dialog.showMessageBox(memoryWindow, {
+    type: 'warning',
+    buttons: ['Delete Everything', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    message: "Delete all of Haru's memories and saved conversations?",
+    detail: 'This permanently removes them from your Atlas database and cannot be undone.',
+  });
+  if (response === 0) await memory.clearAll();
 });
 
 ipcMain.on('pet:set-interactive', (_event, value) => {
@@ -601,9 +702,20 @@ if (!app.requestSingleInstanceLock()) {
     registerShortcuts();
     refreshTray();
     setInterval(tick, 16);
+
+    const mongoUri = readMongoUri();
+    if (mongoUri) {
+      memory.connect(mongoUri);
+    } else if (!settings.memorySetupShown) {
+      saveSettings({ memorySetupShown: true });
+      openMemoryWindow();
+    }
   });
 
-  app.on('will-quit', () => globalShortcut.unregisterAll());
+  app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
+    memory.disconnect();
+  });
 
   // The pet lives in the tray, so closing its window must not end the app.
   app.on('window-all-closed', () => {});

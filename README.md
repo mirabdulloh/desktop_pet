@@ -53,7 +53,8 @@ These work from any app. On macOS, `Alt` is the `Option` key.
 ## Structure
 
 - `src/main.js`: window, tray, drag, gravity, walking and local asset serving
-- `src/chat.js`: streaming Claude conversation through your plan or an API key
+- `src/chat.js` and `src/providers/`: swappable AI connection (Claude plan or API key)
+- `src/memory.js` and `src/memory-window/`: MongoDB memory and its management window
 - `src/preload.js`: the small `window.pet` bridge
 - `src/renderer/app.js`: Live2D rendering, reactions and speech
 - `characters/<id>/character.json`: name, size, expressions, moods and lines
@@ -83,7 +84,7 @@ other people's requests through a Claude plan, so public releases must use API k
 
 - Replies stream into her speech bubble while her mouth moves.
 - Each reply starts with a mood tag that sets her expression.
-- The conversation lasts until you quit or choose **Clear Chat**. It is not saved to disk.
+- **Clear Chat** starts a new conversation. With memory connected, conversations are saved.
 - In API mode, server-side refusal fallback can retry a declined request on another model.
 - Her personality is the `persona` field in `characters/haru/character.json`.
 
@@ -100,10 +101,23 @@ Ask her in chat, for example "open YouTube and find lofi music".
 - She can't pause, click page buttons, type into pages, read pages, or access your files. Each command is checked by the
   app in `src/actions.js` before anything runs.
 
+## Memory
+
+Haru stores long-term memory in your own MongoDB Atlas cluster, in the `desktop_pet`
+database (`memories` and `messages`). Right-click her and choose **Memory...** to connect,
+view notes, delete one, delete everything, or disconnect.
+
+- The connection string is encrypted with the macOS Keychain and never added to this repo.
+- She saves lasting facts, preferences and corrections, and recalls relevant ones per message.
+- Passwords, keys, tokens and card-like numbers are refused or hidden before saving.
+- Saved text lives in your Atlas cluster and relevant notes are sent to the active AI.
+- Memory is separate from the AI. To add another model, create a provider in `src/providers/`
+  and select it in `src/chat.js`.
+
 ## Roadmap
 
 - [ ] Voice input and spoken replies with lip sync
-- [ ] Long-term memory between sessions
+- [ ] Telegram style learning, drafts, and sending with approval
 - [ ] Name each gesture and group them by mood
 - [ ] Load any Live2D model from the tray
 - [ ] Settings window

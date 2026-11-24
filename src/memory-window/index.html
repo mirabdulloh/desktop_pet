@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self';" />
+    <title>Haru's Memory</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Haru's Memory</h1>
+      <span id="status" class="status">Checking...</span>
+    </header>
+
+    <form id="connect" autocomplete="off" hidden>
+      <label for="uri">MongoDB Atlas connection string</label>
+      <input id="uri" type="password" placeholder="mongodb+srv://user:password@cluster.mongodb.net/" spellcheck="false" />
+      <p class="help">
+        In Atlas, open your cluster and choose Connect, then Drivers, and copy the string with your real password.
+        Under Network Access, allow this Mac's IP. It is stored encrypted on this Mac.
+      </p>
+      <p id="connect-error" class="error" role="alert" hidden></p>
+      <button id="connect-button" type="submit">Connect</button>
+    </form>
+
+    <section id="memories" hidden>
+      <div class="toolbar">
+        <span id="count"></span>
+        <span class="spacer"></span>
+        <button id="clear" class="danger" type="button">Delete All</button>
+        <button id="disconnect" type="button">Disconnect</button>
+      </div>
+      <p id="empty" class="help" hidden>Nothing saved yet. Tell Haru something about yourself in chat.</p>
+      <ul id="list"></ul>
+    </section>
+    <script src="memory.js"></script>
+  </body>
+</html>
