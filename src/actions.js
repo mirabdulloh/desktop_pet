@@ -6,6 +6,20 @@ const { app, dialog, shell } = require('electron');
 
 const MAX_VALUE_LENGTH = 200;
 const APP_FOLDERS = ['/Applications', '/System/Applications', path.join(os.homedir(), 'Applications')];
+const YOUTUBE_PREFIXES = ['https://www.youtube.com/', 'https://youtube.com/', 'https://m.youtube.com/'];
+const GOOGLE_PREFIXES = ['https://www.google.com/search'];
+const CHROMIUM_BROWSERS = {
+  'com.google.chrome': 'Google Chrome',
+  'com.brave.browser': 'Brave Browser',
+  'com.microsoft.edgemac': 'Microsoft Edge',
+};
+const MATCHES_HANDLER = `
+on matches(pageUrl, prefixes)
+  repeat with prefix in prefixes
+    if (pageUrl as text) starts with (prefix as text) then return true
+  end repeat
+  return false
+end matches`;
 
 const ACTION_PROMPT = `
 
@@ -15,6 +29,103 @@ You can do these things on the user's computer, only when their latest message a
 <<action {"type":"website","value":"example.com"}>> opens a website.
 <<action {"type":"app","value":"Calculator"}>> opens an installed app by name.
 Say briefly what you are opening. You can't click, type, play a specific video, read pages, or see the result. Never add a command unless the user asked.`;
+
+const chromiumScript = (name) => `
+on run argv
+  set targetUrl to item 1 of argv
+  set prefixes to items 2 thru -1 of argv
+  if not (application "${name}" is running) then return "none"
+  tell application "${name}"
+    repeat with w in windows
+      if my matches(URL of active tab of w, prefixes) then
+        set URL of active tab of w to targetUrl
+        set index of w to 1
+        activate
+        return "reused"
+      end if
+    end repeat
+    repeat with w in windows
+      set tabIndex to 0
+      repeat with t in tabs of w
+        set tabIndex to tabIndex + 1
+        if my matches(URL of t, prefixes) then
+          set URL of t to targetUrl
+          set active tab index of w to tabIndex
+          set index of w to 1
+          activate
+          return "reused"
+        end if
+      end repeat
+    end repeat
+  end tell
+  return "none"
+end run
+${MATCHES_HANDLER}`;
+
+const SAFARI_SCRIPT = `
+on run argv
+  set targetUrl to item 1 of argv
+  set prefixes to items 2 thru -1 of argv
+  if not (application "Safari" is running) then return "none"
+  tell application "Safari"
+    repeat with w in windows
+      try
+        if my matches(URL of current tab of w, prefixes) then
+          set URL of current tab of w to targetUrl
+          set index of w to 1
+          activate
+          return "reused"
+        end if
+      end try
+    end repeat
+    repeat with w in windows
+      try
+        repeat with t in tabs of w
+          if my matches(URL of t, prefixes) then
+            set URL of t to targetUrl
+            set current tab of w to t
+            set index of w to 1
+            activate
+            return "reused"
+          end if
+        end repeat
+      end try
+    end repeat
+  end tell
+  return "none"
+end run
+${MATCHES_HANDLER}`;
+
+function defaultBrowserId() {
+  const plist = path.join(os.homedir(), 'Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist');
+  return new Promise((resolve) => {
+    execFile('/usr/bin/plutil', ['-convert', 'json', '-o', '-', plist], (error, stdout) => {
+      if (error) return resolve('com.apple.safari');
+      try {
+        const handler = (JSON.parse(stdout).LSHandlers || []).find((item) => item.LSHandlerURLScheme === 'https');
+        return resolve((handler?.LSHandlerRoleAll || 'com.apple.safari').toLowerCase());
+      } catch {
+        return resolve('com.apple.safari');
+      }
+    });
+  });
+}
+
+// URLs are passed as script arguments, so page text can never become AppleScript code.
+async function reuseBrowserTab(url, prefixes) {
+  const id = await defaultBrowserId();
+  const script = id === 'com.apple.safari' ? SAFARI_SCRIPT : CHROMIUM_BROWSERS[id] && chromiumScript(CHROMIUM_BROWSERS[id]);
+  if (!script) return false;
+  return new Promise((resolve) => {
+    execFile('/usr/bin/osascript', ['-e', script, url, ...prefixes], { timeout: 6000 }, (error, stdout) => {
+      resolve(!error && stdout.trim() === 'reused');
+    });
+  });
+}
+
+async function openInBrowser(url, prefixes) {
+  if (!(await reuseBrowserTab(url, prefixes))) await shell.openExternal(url);
+}
 
 function createActionFilter(emit) {
   let raw = '';
@@ -90,11 +201,10 @@ async function runAction(action) {
   try {
     if (action.type === 'youtube') {
       const query = encodeURIComponent(action.value);
-      await shell.openExternal(
-        query ? `https://www.youtube.com/results?search_query=${query}` : 'https://www.youtube.com/',
-      );
+      const url = query ? `https://www.youtube.com/results?search_query=${query}` : 'https://www.youtube.com/';
+      await openInBrowser(url, YOUTUBE_PREFIXES);
     } else if (action.type === 'google') {
-      await shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(action.value)}`);
+      await openInBrowser(`https://www.google.com/search?q=${encodeURIComponent(action.value)}`, GOOGLE_PREFIXES);
     } else if (action.type === 'website') {
       const url = safeWebsite(action.value);
       if (!url) return { ok: false, message: "I can only open secure https websites." };
@@ -112,4 +222,4 @@ async function runAction(action) {
   }
 }
 
-module.exports = { ACTION_PROMPT, createActionFilter, parseAction, runAction, safeWebsite };
+module.exports = { ACTION_PROMPT, createActionFilter, parseAction, reuseBrowserTab, runAction, safeWebsite };
