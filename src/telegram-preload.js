@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('telegramApi', {
   submitLogin: (value) => ipcRenderer.invoke('telegram:login-submit', value),
   logout: () => ipcRenderer.invoke('telegram:logout'),
   send: (key, text) => ipcRenderer.invoke('telegram:send', key, text),
+  setDirectSend: (enabled) => ipcRenderer.invoke('telegram:set-direct', enabled),
+  stopAutoReply: (key) => ipcRenderer.invoke('telegram:stop-auto', key),
+  startAutoReply: (styleKey, name) => ipcRenderer.invoke('telegram:start-auto', styleKey, name),
   onUpdated: (callback) => ipcRenderer.on('telegram:updated', () => callback()),
   onProgress: (callback) => ipcRenderer.on('telegram:progress', (_event, text) => callback(text)),
 });

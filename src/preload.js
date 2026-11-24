@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('pet', {
   onChatOpen: listen('pet:chat-open'),
   onChatDelta: listen('pet:chat-delta'),
   onAction: listen('pet:action'),
+  onNotice: listen('pet:notice'),
   onTick: listen('pet:tick'),
   onMotion: listen('pet:motion'),
 });

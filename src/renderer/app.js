@@ -591,6 +591,7 @@ async function sendMessage(text) {
 let activeDelta = null;
 window.pet.onChatDelta((delta) => activeDelta?.(delta));
 window.pet.onChatOpen(({ hasKey }) => showChat(hasKey));
+window.pet.onNotice((text) => speak(text, 4000));
 
 chatForm.addEventListener('submit', (event) => {
   event.preventDefault();

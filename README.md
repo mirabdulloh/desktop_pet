@@ -139,7 +139,14 @@ Right-click Haru and choose **Telegram...**, then import `result.json` from Tele
 then log in from the Telegram window with your API ID, API hash, phone and login code.
 
 - The session is encrypted on this Mac and never stored in Atlas or this repository.
-- She sends only when you click **Send to [name]** on a draft.
+- She sends when you click **Send to [name]** on a draft.
+- **Send without asking** (off until you turn it on) sends right away when you tell her to
+  write to someone. If two people match the name, she asks which one first.
+- **Auto-reply**: say "Onamga o'zing javob ber" or press **Auto-reply** on a learned person.
+  She waits 12 seconds for more messages, then answers in your style. She stays quiet if you
+  already answered, leaves money, codes and serious messages for you, sends at most one reply
+  a minute and 30 a day per person, and never answers people you didn't turn on. Say
+  "stop answering Onam" or press **Stop** to end it. It works while Haru is running.
 - Ask "what did Ali write?" and she reads the latest 15 messages with that person and sends
   them to the active AI for a short summary. They are not saved. Bots and Telegram's
   login-code chat are excluded.

@@ -34,6 +34,19 @@
     <section class="card">
       <h2>Live Telegram</h2>
       <p id="live-connected" class="help" hidden></p>
+      <div id="live-controls" hidden>
+        <label class="toggle">
+          <input id="direct-send" type="checkbox" />
+          Send without asking when I tell her to write to someone
+        </label>
+        <h3>Auto-reply</h3>
+        <p id="no-auto" class="help">
+          She answers nobody by herself yet. Tell her "Onamga o'zing javob ber", or press Auto-reply on a learned person
+          below.
+        </p>
+        <ul id="auto-people" class="rows"></ul>
+        <ul id="auto-history" class="rows"></ul>
+      </div>
       <form id="live-login" autocomplete="off" hidden>
         <p class="help">
           Open my.telegram.org, log in, choose API development tools, and create an app to get your API ID and hash.

@@ -86,7 +86,21 @@ function renderStyles(allStyles) {
       replies.textContent = style.replyHabits ? `How you reply: ${style.replyHabits}` : '';
       stats.textContent += `, ${style.exampleCount} real replies saved`;
       body.append(name, detail, replies, stats, chips);
-      row.append(body, remove);
+      const actions = document.createElement('div');
+      actions.className = 'stack';
+      if (liveConnected && !autoKeys.has(style.key)) {
+        const auto = document.createElement('button');
+        auto.type = 'button';
+        auto.textContent = 'Auto-reply';
+        auto.setAttribute('aria-label', `Answer ${style.name} automatically`);
+        auto.addEventListener('click', async () => {
+          await api.startAutoReply(style.key, style.name);
+          render();
+        });
+        actions.append(auto);
+      }
+      actions.append(remove);
+      row.append(body, actions);
       return row;
     }),
   );
@@ -150,6 +164,44 @@ function renderLive(live) {
   }
 }
 
+function renderAuto(state) {
+  const connected = state.live.state === 'connected';
+  el('live-controls').hidden = !connected;
+  el('direct-send').checked = state.directSend;
+  el('no-auto').hidden = state.autoReply.length > 0;
+  el('auto-people').replaceChildren(
+    ...state.autoReply.map((person) => {
+      const row = document.createElement('li');
+      const name = document.createElement('div');
+      const stop = document.createElement('button');
+      name.className = 'grow';
+      name.textContent = `Answering ${person.name} by herself`;
+      stop.type = 'button';
+      stop.textContent = 'Stop';
+      stop.setAttribute('aria-label', `Stop auto-reply for ${person.name}`);
+      stop.addEventListener('click', async () => {
+        await api.stopAutoReply(person.key);
+        render();
+      });
+      row.append(name, stop);
+      return row;
+    }),
+  );
+  el('auto-history').replaceChildren(
+    ...state.autoHistory.map((item) => {
+      const row = document.createElement('li');
+      const text = document.createElement('div');
+      text.className = 'detail';
+      const time = new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      text.textContent = item.sent
+        ? `${time} Replied to ${item.name}: ${item.text}`
+        : `${time} Left ${item.name}'s message for you to answer.`;
+      row.append(text);
+      return row;
+    }),
+  );
+}
+
 const learnedNote = (count) => (count ? ` Learned ${count} ${count === 1 ? 'fix' : 'fixes'} from your edit.` : '');
 
 async function render() {
@@ -163,9 +215,17 @@ async function render() {
     renderDraft(state.draft);
   }
   renderLive(state.live);
+  renderAuto(state);
   renderChats(state.chats);
+  liveConnected = state.live.state === 'connected';
+  autoKeys = new Set(state.autoReply.map((person) => `tg:${person.key}`));
   renderStyles(state.styles);
 }
+
+let liveConnected = false;
+let autoKeys = new Set();
+
+el('direct-send').addEventListener('change', (event) => api.setDirectSend(event.target.checked));
 
 el('import').addEventListener('click', async () => {
   showMessage('Reading export...');

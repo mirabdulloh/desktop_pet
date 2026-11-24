@@ -106,3 +106,27 @@ select {
   font-weight: 500;
   font-size: 11px;
 }
+
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+  font-weight: 400;
+}
+
+.toggle input {
+  width: auto;
+  margin-top: 3px;
+}
+
+h3 {
+  margin: 14px 0 4px;
+  font-size: 13px;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

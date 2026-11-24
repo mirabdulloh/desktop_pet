@@ -23,6 +23,7 @@ const {
   TELEGRAM_PROMPT,
   TelegramStyles,
   exportSenders,
+  parseAutoReplyCommand,
   parseDraftCommand,
   parseExport,
   parseReadCommand,
@@ -246,7 +247,86 @@ const telegramLive = new TelegramLive(
     },
   },
   () => telegramWindow?.webContents.send('telegram:updated'),
+  (incoming) => onIncomingTelegram(incoming),
 );
+
+const AUTO_REPLY_WAIT_MS = 12000;
+const AUTO_REPLY_GAP_MS = 60000;
+const AUTO_REPLY_DAILY_LIMIT = 30;
+const AUTO_REPLY_HISTORY = 10;
+const autoReplyTimers = new Map();
+const autoReplyCounts = new Map();
+let autoReplyHistory = [];
+
+const autoReplyPeople = () => (Array.isArray(settings.telegramAutoReply) ? settings.telegramAutoReply : []);
+
+function setAutoReply(key, name, on) {
+  const others = autoReplyPeople().filter((person) => person.key !== key);
+  saveSettings({ telegramAutoReply: on ? [...others, { key, name }] : others });
+  if (!on) {
+    clearTimeout(autoReplyTimers.get(key));
+    autoReplyTimers.delete(key);
+  }
+  telegramWindow?.webContents.send('telegram:updated');
+}
+
+function notify(text) {
+  send('pet:notice', text);
+  telegramWindow?.webContents.send('telegram:progress', text);
+}
+
+function noteAutoReply(name, text, sent) {
+  autoReplyHistory = [{ name, text, sent, at: Date.now() }, ...autoReplyHistory].slice(0, AUTO_REPLY_HISTORY);
+  telegramWindow?.webContents.send('telegram:updated');
+}
+
+// Waits a few seconds so several quick messages get one answer.
+function onIncomingTelegram({ key, name }) {
+  if (!autoReplyPeople().some((person) => person.key === key)) return;
+  clearTimeout(autoReplyTimers.get(key));
+  autoReplyTimers.set(key, setTimeout(() => autoReply(key, name), AUTO_REPLY_WAIT_MS));
+}
+
+async function autoReply(key, name) {
+  autoReplyTimers.delete(key);
+  if (!telegramLive.connected || !autoReplyPeople().some((person) => person.key === key)) return;
+  const today = new Date().toDateString();
+  const count = autoReplyCounts.get(key)?.day === today ? autoReplyCounts.get(key) : { day: today, sent: 0, last: 0 };
+  if (count.sent >= AUTO_REPLY_DAILY_LIMIT) return;
+  const waitMore = count.last + AUTO_REPLY_GAP_MS - Date.now();
+  if (waitMore > 0) {
+    autoReplyTimers.set(key, setTimeout(() => autoReply(key, name), waitMore));
+    return;
+  }
+  try {
+    const messages = await telegramLive.readRecent(key);
+    // If the user already answered, she stays quiet.
+    if (!messages.length || messages[messages.length - 1].fromMe) return;
+    const result = await telegramStyles.reply(`tg:${key}`, name, messages);
+    if (!result.ok) return;
+    if (result.skip) {
+      noteAutoReply(name, '', false);
+      notify(`${name} wrote something you should answer yourself.`);
+      return;
+    }
+    const latest = await telegramLive.readRecent(key);
+    if (latest[latest.length - 1]?.fromMe) return;
+    const text = result.text.slice(0, MAX_DRAFT_LENGTH);
+    await telegramLive.send(key, text);
+    autoReplyCounts.set(key, { day: today, sent: count.sent + 1, last: Date.now() });
+    noteAutoReply(name, text, true);
+    notify(`Replied to ${name}: "${text}"`);
+  } catch (error) {
+    console.warn('Auto-reply failed:', error.name);
+  }
+}
+
+// Picks the one live chat to use, preferring the person whose style was learned.
+function pickRecipient(recipients, styleKey) {
+  const learned = recipients.find((person) => `tg:${person.key}` === styleKey);
+  if (learned) return learned;
+  return recipients.length === 1 ? recipients[0] : null;
+}
 
 async function readTelegramChat(contact) {
   if (!telegramLive.connected) {
@@ -722,18 +802,65 @@ ipcMain.handle('pet:chat-send', async (_event, text) => {
     const drafted = await telegramStyles.draft(draftCommand.contact, draftCommand.request).catch(() => ({ ok: false }));
     if (!drafted.ok) return { ...result, action: { ok: false, message: "Sorry, I couldn't write that draft." } };
     const recipients = await telegramLive.findContacts(draftCommand.contact).catch(() => []);
+    const recipient = settings.telegramDirectSend === true ? pickRecipient(recipients, drafted.draft.key) : null;
+    if (recipient) {
+      try {
+        await telegramLive.send(recipient.key, drafted.draft.text.slice(0, MAX_DRAFT_LENGTH));
+        return { ...result, action: { ok: true, message: `Sent to ${recipient.name}: "${drafted.draft.text}"` } };
+      } catch (error) {
+        pendingDraft = { ...drafted.draft, recipients };
+        openTelegramWindow();
+        return { ...result, action: { ok: false, message: `I couldn't send it: ${describeError(error)} The draft is open.` } };
+      }
+    }
     pendingDraft = { ...drafted.draft, recipients };
     openTelegramWindow();
+    if (settings.telegramDirectSend === true && recipients.length > 1) {
+      return { ...result, action: { ok: false, message: `Which ${draftCommand.contact}? Choose in the window.` } };
+    }
     return result;
   }
+
+  const autoCommand = parseAutoReplyCommand(raw);
+  if (autoCommand) return { ...result, action: await changeAutoReply(autoCommand) };
 
   const action = parseAction(raw);
   return action ? { ...result, action: await runAction(action) } : result;
 });
 
+async function changeAutoReply({ contact, on }) {
+  if (!on) {
+    const wanted = contact.toLocaleLowerCase();
+    const stopped = autoReplyPeople().filter((person) => person.name.toLocaleLowerCase().includes(wanted));
+    stopped.forEach((person) => setAutoReply(person.key, person.name, false));
+    return stopped.length
+      ? { ok: true, message: `I stopped answering ${stopped.map((person) => person.name).join(', ')}.` }
+      : { ok: false, message: `I wasn't answering ${contact}.` };
+  }
+  if (!telegramLive.connected) {
+    openTelegramWindow();
+    return { ok: false, message: 'Connect Telegram first in the window I just opened.' };
+  }
+  const styles = await telegramStyles.list().catch(() => []);
+  const recipients = await telegramLive.findContacts(contact).catch(() => []);
+  const style = styles.find((item) => recipients.some((person) => `tg:${person.key}` === item.key));
+  const person = pickRecipient(recipients, style?.key);
+  if (!person) {
+    return recipients.length
+      ? { ok: false, message: `Which one: ${recipients.map((item) => item.name).join(', ')}?` }
+      : { ok: false, message: `I couldn't find ${contact} in your chats.` };
+  }
+  setAutoReply(person.key, person.name, true);
+  const note = style ? '' : " I haven't learned your style with them yet.";
+  return { ok: true, message: `I'll answer ${person.name}'s new messages for you.${note}` };
+}
+
 handleTelegramIpc('telegram:state', async () => ({
   connected: memory.connected,
   live: telegramLive.status(),
+  directSend: settings.telegramDirectSend === true,
+  autoReply: autoReplyPeople(),
+  autoHistory: autoReplyHistory,
   styles: await telegramStyles.list().catch(() => []),
   chats: telegramChats.map(({ key, name, count }) => ({ key, name, count })),
   draft: pendingDraft,
@@ -866,6 +993,16 @@ handleTelegramIpc('telegram:send', async (key, text) => {
   } finally {
     sendingDraft = false;
   }
+});
+handleTelegramIpc('telegram:set-direct', (enabled) => saveSettings({ telegramDirectSend: enabled === true }));
+// Learned styles are keyed by the Telegram user id, which is also the live chat id.
+handleTelegramIpc('telegram:start-auto', (styleKey, name) => {
+  const key = typeof styleKey === 'string' ? styleKey.match(/^tg:(\d+)$/)?.[1] : null;
+  if (key && typeof name === 'string' && telegramLive.connected) setAutoReply(key, name.slice(0, 80), true);
+});
+handleTelegramIpc('telegram:stop-auto', (key) => {
+  const person = autoReplyPeople().find((item) => item.key === key);
+  if (person) setAutoReply(person.key, person.name, false);
 });
 // This link only fills in the text. The user picks the chat and presses Send in Telegram.
 handleTelegramIpc('telegram:open', async (text) => {

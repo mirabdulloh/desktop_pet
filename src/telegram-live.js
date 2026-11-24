@@ -1,5 +1,6 @@
 const { TelegramClient, Api } = require('telegram');
 const { StringSession } = require('telegram/sessions');
+const { NewMessage } = require('telegram/events');
 const { redactSecrets } = require('./memory');
 
 const TELEGRAM_SERVICE_ID = '777000';
@@ -32,9 +33,10 @@ function describeError(error) {
 }
 
 class TelegramLive {
-  constructor(storage, onChange) {
+  constructor(storage, onChange, onIncoming = () => {}) {
     this.storage = storage;
     this.onChange = onChange;
+    this.onIncoming = onIncoming;
     this.client = null;
     this.state = 'off';
     this.error = null;
@@ -67,7 +69,26 @@ class TelegramLive {
     const me = await this.client.getMe();
     this.name = me.firstName || me.username || 'your account';
     this.storage.save({ apiId, apiHash, session: this.client.session.save() });
+    this.listen(this.client);
     this.setState('connected');
+  }
+
+  // Reports new private text messages from real people. Bots and Telegram's code chat are ignored.
+  listen(client) {
+    client.addEventHandler(async (event) => {
+      try {
+        const { message } = event;
+        if (!event.isPrivate || message.out || !message.message || client !== this.client) return;
+        const sender = await message.getSender();
+        const key = String(message.chatId);
+        if (!sender || sender.bot || sender.self || key === TELEGRAM_SERVICE_ID) return;
+        this.entities.set(key, sender);
+        const name = [sender.firstName, sender.lastName].filter(Boolean).join(' ') || sender.username || 'someone';
+        this.onIncoming({ key, name });
+      } catch {
+        // A message that can't be read is skipped.
+      }
+    }, new NewMessage({ incoming: true }));
   }
 
   async restore() {
