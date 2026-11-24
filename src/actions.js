@@ -25,7 +25,7 @@ const ACTION_PROMPT = `
 
 You can do these things on the user's computer, only when their latest message asks for it. Add exactly one command at the very end of your reply:
 <<action {"type":"youtube","value":"search words"}>> opens YouTube search results. Use an empty value for the YouTube home page.
-<<action {"type":"play","value":"search words"}>> finds the top YouTube result and starts playing it. Use this whenever the user asks to play, press, start or put on a song or video. Choose specific search words, such as a well-known song and artist, when they ask for "the best" one.
+<<action {"type":"play","value":"search words"}>> finds the top YouTube result and starts playing it. Use this whenever the user asks to play, press, start or put on a song or video. Choose specific search words, such as a well-known song and artist, when they ask for "the best" one. If they say "that", "this", "it" or "the first one" without naming anything, use an empty value: <<action {"type":"play","value":""}>> plays the top result of the YouTube page open right now. Never ask which song in that case.
 <<action {"type":"google","value":"search words"}>> opens Google search results.
 <<action {"type":"website","value":"example.com"}>> opens a website.
 <<action {"type":"app","value":"Calculator"}>> opens an installed app by name.
@@ -101,6 +101,48 @@ on run argv
 end run
 ${MATCHES_HANDLER}`;
 
+const readChromiumTabScript = (name) => `
+on run argv
+  if not (application "${name}" is running) then return ""
+  tell application "${name}"
+    repeat with w in windows
+      try
+        if my matches(URL of active tab of w, argv) then return URL of active tab of w
+      end try
+    end repeat
+    repeat with w in windows
+      try
+        repeat with t in tabs of w
+          if my matches(URL of t, argv) then return URL of t
+        end repeat
+      end try
+    end repeat
+  end tell
+  return ""
+end run
+${MATCHES_HANDLER}`;
+
+const READ_SAFARI_TAB_SCRIPT = `
+on run argv
+  if not (application "Safari" is running) then return ""
+  tell application "Safari"
+    repeat with w in windows
+      try
+        if my matches(URL of current tab of w, argv) then return URL of current tab of w
+      end try
+    end repeat
+    repeat with w in windows
+      try
+        repeat with t in tabs of w
+          if my matches(URL of t, argv) then return URL of t
+        end repeat
+      end try
+    end repeat
+  end tell
+  return ""
+end run
+${MATCHES_HANDLER}`;
+
 function defaultBrowserId() {
   const plist = path.join(os.homedir(), 'Library/Preferences/com.apple.LaunchServices/com.apple.launchservices.secure.plist');
   return new Promise((resolve) => {
@@ -145,6 +187,29 @@ async function findTopVideo(query) {
   return match ? match[1] : null;
 }
 
+async function readYouTubeTab() {
+  const id = await defaultBrowserId();
+  const script = id === 'com.apple.safari' ? READ_SAFARI_TAB_SCRIPT : CHROMIUM_BROWSERS[id] && readChromiumTabScript(CHROMIUM_BROWSERS[id]);
+  if (!script) return null;
+  return new Promise((resolve) => {
+    execFile('/usr/bin/osascript', ['-e', script, ...YOUTUBE_PREFIXES], { timeout: 30000 }, (error, stdout) => {
+      resolve(error ? null : stdout.trim() || null);
+    });
+  });
+}
+
+// With no song name, the open YouTube page decides what "play that" means.
+async function resolveVideo(value) {
+  if (value) return findTopVideo(value);
+  const current = await readYouTubeTab();
+  if (!current) return null;
+  const url = new URL(current);
+  const watched = url.searchParams.get('v');
+  if (url.pathname === '/watch' && /^[\w-]{11}$/.test(watched || '')) return watched;
+  const query = url.searchParams.get('search_query');
+  return url.pathname === '/results' && query ? findTopVideo(query) : null;
+}
+
 function createActionFilter(emit) {
   let raw = '';
   let sent = '';
@@ -171,7 +236,6 @@ function parseAction(reply) {
     const { type, value = '' } = JSON.parse(match[1]);
     if (!['youtube', 'play', 'google', 'website', 'app'].includes(type)) return null;
     if (typeof value !== 'string' || value.length > MAX_VALUE_LENGTH) return null;
-    if (type === 'play' && !value.trim()) return null;
     return { type, value: value.trim() };
   } catch {
     return null;
@@ -225,9 +289,12 @@ async function runAction(action) {
     } else if (action.type === 'play') {
       let videoId = null;
       try {
-        videoId = await findTopVideo(action.value);
+        videoId = await resolveVideo(action.value);
       } catch {
         videoId = null;
+      }
+      if (!videoId && !action.value) {
+        return { ok: false, message: 'Open a YouTube search or tell me the song name, and I will play it.' };
       }
       if (!videoId) {
         const results = `https://www.youtube.com/results?search_query=${encodeURIComponent(action.value)}`;
@@ -258,4 +325,13 @@ async function runAction(action) {
   }
 }
 
-module.exports = { ACTION_PROMPT, createActionFilter, findTopVideo, parseAction, reuseBrowserTab, runAction, safeWebsite };
+module.exports = {
+  ACTION_PROMPT,
+  createActionFilter,
+  findTopVideo,
+  parseAction,
+  resolveVideo,
+  reuseBrowserTab,
+  runAction,
+  safeWebsite,
+};

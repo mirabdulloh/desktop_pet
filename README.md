@@ -95,7 +95,7 @@ Ask her in chat, for example "open YouTube and find lofi music".
   Edge or Safari. macOS may ask once for permission to control the browser. A new tab opens
   only when no matching tab exists or permission is denied.
 - **Play requests** ("play the best Russian song") find the top YouTube result and load it
-  in the open YouTube tab.
+  in the open YouTube tab. "Play that" starts the top result of the YouTube page already open.
 - **Websites** (https only) and **installed apps** ask for your approval first.
 - She can't pause, click page buttons, type into pages, read pages, or access your files. Each command is checked by the
   app in `src/actions.js` before anything runs.
