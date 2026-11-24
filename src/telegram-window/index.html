@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self';" />
+    <title>Haru's Telegram</title>
+    <link rel="stylesheet" href="../memory-window/style.css" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Haru's Telegram</h1>
+      <span id="status" class="status"></span>
+    </header>
+
+    <section id="draft" class="card" hidden>
+      <h2 id="draft-title"></h2>
+      <label for="draft-text">Check or edit before sending</label>
+      <textarea id="draft-text" rows="4"></textarea>
+      <p id="draft-note" class="help"></p>
+      <div class="actions">
+        <button id="draft-open" class="primary" type="button">Open in Telegram</button>
+        <button id="draft-copy" type="button">Copy</button>
+        <button id="draft-discard" type="button">Discard</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Learn from your chats</h2>
+      <p class="help">
+        In Telegram Desktop, open Settings, Advanced, Export Telegram data. Choose Personal chats, turn off media, and
+        use JSON. Then import <strong>result.json</strong>. Only your own messages are analyzed, and only the style
+        summary is saved.
+      </p>
+      <div class="actions">
+        <button id="import" class="primary" type="button">Import result.json</button>
+        <button id="learn" type="button" hidden>Learn selected</button>
+      </div>
+      <p id="message" class="help" role="status"></p>
+      <ul id="chats" class="rows"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Learned styles</h2>
+      <p id="no-styles" class="help">Nothing learned yet.</p>
+      <ul id="styles" class="rows"></ul>
+    </section>
+    <script src="telegram.js"></script>
+  </body>
+</html>

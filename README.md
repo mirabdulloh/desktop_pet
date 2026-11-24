@@ -116,10 +116,20 @@ is saved. Right-click her and choose **Memory...** to view or delete notes.
 - Memory is separate from the AI. To add another model, create a provider in `src/providers/`
   and select it in `src/chat.js`.
 
+## Telegram (demo)
+
+Right-click Haru and choose **Telegram...**, then import `result.json` from Telegram Desktop
+(**Settings > Advanced > Export Telegram data**, JSON format, personal chats, no media).
+
+- Select the chats she may learn from. Only your own messages are sent to the AI.
+- She saves a short style summary per contact in `Haru.telegram_styles`, not the chats.
+- Ask in chat, for example "write to Ali that I'll be late". A draft opens for you to edit.
+- **Open in Telegram** fills in the text. You choose the chat and press Send yourself.
+
 ## Roadmap
 
 - [ ] Voice input and spoken replies with lip sync
-- [ ] Telegram style learning, drafts, and sending with approval
+- [ ] Direct Telegram sending after approval
 - [ ] Name each gesture and group them by mood
 - [ ] Load any Live2D model from the tray
 - [ ] Settings window

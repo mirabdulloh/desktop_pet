@@ -9,6 +9,8 @@ const {
   dialog,
   safeStorage,
   globalShortcut,
+  clipboard,
+  shell,
 } = require('electron');
 const crypto = require('crypto');
 const path = require('path');
@@ -16,6 +18,7 @@ const fs = require('fs');
 const { Chat } = require('./chat');
 const { ACTION_PROMPT, createActionFilter, parseAction, runAction } = require('./actions');
 const { MEMORY_PROMPT, Memory, findMongoUris } = require('./memory');
+const { TELEGRAM_PROMPT, TelegramStyles, exportSenders, parseDraftCommand, parseExport } = require('./telegram');
 
 const CHARACTERS_DIR = path.join(__dirname, '..', 'characters');
 const LIVE2D_DIR = path.join(__dirname, '..', 'vendor', 'live2d');
@@ -35,6 +38,9 @@ const CONTENT_TYPES = { '.json': 'application/json', '.png': 'image/png', '.moc3
 const MAX_CHAT_LENGTH = 2000;
 const RECALL_TIMEOUT_MS = 2500;
 const MAX_ENV_FILE_BYTES = 256 * 1024;
+const MAX_EXPORT_BYTES = 200 * 1024 * 1024;
+const MAX_LEARN_CHATS = 10;
+const MAX_DRAFT_LENGTH = 4096;
 const KEYS = {
   goLeft: 'Control+Alt+Left',
   goRight: 'Control+Alt+Right',
@@ -65,6 +71,9 @@ let rise = null;
 let interactive = false;
 let unavailableKeys = [];
 let memoryWindow = null;
+let telegramWindow = null;
+let telegramChats = [];
+let pendingDraft = null;
 let chatSession = crypto.randomUUID();
 const memory = new Memory();
 
@@ -136,6 +145,43 @@ function openMemoryWindow() {
   app.focus({ steal: true });
 }
 
+function openTelegramWindow() {
+  if (telegramWindow) {
+    app.focus({ steal: true });
+    telegramWindow.show();
+    telegramWindow.focus();
+    telegramWindow.webContents.send('telegram:updated');
+    return;
+  }
+  telegramWindow = new BrowserWindow({
+    width: 560,
+    height: 680,
+    minWidth: 420,
+    minHeight: 420,
+    title: "Haru's Telegram",
+    webPreferences: {
+      preload: path.join(__dirname, 'telegram-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  telegramWindow.setMenuBarVisibility(false);
+  telegramWindow.loadFile(path.join(__dirname, 'telegram-window', 'index.html'));
+  telegramWindow.on('closed', () => {
+    telegramWindow = null;
+    telegramChats = [];
+  });
+  app.focus({ steal: true });
+}
+
+function handleTelegramIpc(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!telegramWindow || event.sender !== telegramWindow.webContents) throw new Error('Not allowed');
+    return handler(...args);
+  });
+}
+
 function clearChat() {
   chat.clear();
   chatSession = crypto.randomUUID();
@@ -163,6 +209,8 @@ const chat = new Chat(
   () => (fs.existsSync(keyPath()) ? readApiKey() : null),
   path.join(app.getPath('temp'), 'desktop-pet-chat'),
 );
+
+const telegramStyles = new TelegramStyles(memory, (system, text) => chat.complete(system, text));
 
 async function hasCredentials() {
   if (fs.existsSync(keyPath()) || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return true;
@@ -453,6 +501,7 @@ function actionItems() {
     { label: `Chat with ${character.name}`, accelerator: KEYS.chat, registerAccelerator: false, click: openChat },
     { label: 'Clear Chat', click: clearChat },
     { label: 'Memory...', click: openMemoryWindow },
+    { label: 'Telegram...', click: openTelegramWindow },
     { label: 'Remove API Key', enabled: fs.existsSync(keyPath()), click: removeApiKey },
     { type: 'separator' },
     {
@@ -596,7 +645,7 @@ ipcMain.handle('pet:chat-send', async (_event, text) => {
   const session = chatSession;
   const context = await withTimeout(memory.recall(message, session).catch(() => ''), RECALL_TIMEOUT_MS, '');
   const filter = createActionFilter((delta) => send('pet:chat-delta', delta));
-  const system = character.persona + ACTION_PROMPT + MEMORY_PROMPT;
+  const system = character.persona + ACTION_PROMPT + MEMORY_PROMPT + TELEGRAM_PROMPT;
   const result = await chat.send(system, context, message, filter.push);
   if (!result.ok) return result;
 
@@ -608,8 +657,84 @@ ipcMain.handle('pet:chat-send', async (_event, text) => {
     .then(() => memory.saveExchange(session, message, spoken))
     .catch((error) => console.warn('Memory save failed:', error.name));
 
+  const draftCommand = parseDraftCommand(raw);
+  if (draftCommand) {
+    const drafted = await telegramStyles.draft(draftCommand.contact, draftCommand.request).catch(() => ({ ok: false }));
+    if (!drafted.ok) return { ...result, action: { ok: false, message: "Sorry, I couldn't write that draft." } };
+    pendingDraft = drafted.draft;
+    openTelegramWindow();
+    return result;
+  }
+
   const action = parseAction(raw);
   return action ? { ...result, action: await runAction(action) } : result;
+});
+
+handleTelegramIpc('telegram:state', async () => ({
+  connected: memory.connected,
+  styles: await telegramStyles.list().catch(() => []),
+  chats: telegramChats.map(({ key, name, count }) => ({ key, name, count })),
+  draft: pendingDraft,
+}));
+
+handleTelegramIpc('telegram:import', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(telegramWindow, {
+    title: 'Choose result.json from your Telegram export',
+    defaultPath: app.getPath('downloads'),
+    filters: [{ name: 'Telegram export', extensions: ['json'] }],
+    properties: ['openFile'],
+  });
+  if (canceled || !filePaths[0]) return { ok: false, cancelled: true };
+  if (fs.statSync(filePaths[0]).size > MAX_EXPORT_BYTES) return { ok: false, error: 'That export is too large for the demo.' };
+
+  let data;
+  try {
+    data = JSON.parse(await fs.promises.readFile(filePaths[0], 'utf-8'));
+  } catch {
+    return { ok: false, error: "That file isn't a valid Telegram JSON export." };
+  }
+  let chats = parseExport(data);
+  if (!chats) {
+    const senders = exportSenders(data).slice(0, 2);
+    if (!senders.length) return { ok: false, error: 'No personal chats found in that export.' };
+    const names = senders.map((sender) => sender.name);
+    const { response } = await dialog.showMessageBox(telegramWindow, {
+      type: 'question',
+      buttons: [...names, 'Cancel'],
+      cancelId: names.length,
+      message: 'Which one is you?',
+    });
+    if (response === names.length) return { ok: false, cancelled: true };
+    chats = parseExport(data, senders[response].id);
+  }
+  telegramChats = chats;
+  return { ok: true, count: chats.length };
+});
+
+handleTelegramIpc('telegram:learn', async (keys) => {
+  const wanted = new Set(Array.isArray(keys) ? keys.slice(0, MAX_LEARN_CHATS) : []);
+  const chats = telegramChats.filter((chat) => wanted.has(chat.key));
+  if (!memory.connected) return { learned: 0, failed: chats.length };
+  let learned = 0;
+  for (const [index, chat] of chats.entries()) {
+    telegramWindow?.webContents.send('telegram:progress', `Learning ${index + 1} of ${chats.length}: ${chat.name}...`);
+    const result = await telegramStyles.learn(chat).catch(() => ({ ok: false }));
+    if (result.ok) learned += 1;
+  }
+  return { learned, failed: chats.length - learned };
+});
+
+handleTelegramIpc('telegram:remove', (key) => (typeof key === 'string' ? telegramStyles.remove(key) : null));
+handleTelegramIpc('telegram:copy', (text) => {
+  if (typeof text === 'string') clipboard.writeText(text.slice(0, MAX_DRAFT_LENGTH));
+});
+handleTelegramIpc('telegram:discard', () => {
+  pendingDraft = null;
+});
+// This link only fills in the text. The user picks the chat and presses Send in Telegram.
+handleTelegramIpc('telegram:open', async (text) => {
+  if (typeof text !== 'string' || !text.trim()) return;
+  await shell.openExternal(`tg://msg?text=${encodeURIComponent(text.slice(0, MAX_DRAFT_LENGTH))}`);
 });
 
 handleMemoryIpc('memory:status', () => memory.status());

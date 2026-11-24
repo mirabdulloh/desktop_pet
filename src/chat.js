@@ -22,6 +22,16 @@ class Chat {
     this.plan.clear();
   }
 
+  // A one-off request on a fresh provider, so background work never enters the conversation.
+  async complete(system, text) {
+    const provider = this.api.isConfigured()
+      ? new AnthropicApiProvider(this.api.getApiKey)
+      : new ClaudePlanProvider(this.plan.workDir);
+    let output = '';
+    const result = await provider.send({ system, context: '', text, onText: (delta) => { output += delta; } });
+    return result.ok ? { ok: true, text: output.trim() } : result;
+  }
+
   async send(system, context, text, onText) {
     if (this.busy) return { ok: false, error: 'busy' };
     this.busy = true;

@@ -140,6 +140,10 @@ class Memory {
     await client?.close().catch(() => {});
   }
 
+  collection(name) {
+    return this.db.collection(name);
+  }
+
   async remember(kind, content) {
     if (!this.connected || !KINDS.includes(kind) || containsSecret(content)) return;
     const now = new Date();
