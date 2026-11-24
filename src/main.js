@@ -746,10 +746,18 @@ handleTelegramIpc('telegram:import', async () => {
   if (fs.statSync(filePaths[0]).size > MAX_EXPORT_BYTES) return { ok: false, error: 'That export is too large for the demo.' };
 
   let data;
+  const raw = await fs.promises.readFile(filePaths[0], 'utf-8');
   try {
-    data = JSON.parse(await fs.promises.readFile(filePaths[0], 'utf-8'));
+    data = JSON.parse(raw);
   } catch {
-    return { ok: false, error: "That file isn't a valid Telegram JSON export." };
+    // Telegram writes result.json gradually, so an unfinished export is cut off mid-file.
+    const unfinished = raw.trimStart().startsWith('{') && !raw.trimEnd().endsWith('}');
+    return {
+      ok: false,
+      error: unfinished
+        ? 'This export is not finished yet. Wait until Telegram says Done, then import again.'
+        : "That file isn't a valid Telegram JSON export.",
+    };
   }
   let chats = parseExport(data);
   if (!chats) {
