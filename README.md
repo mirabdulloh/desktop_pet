@@ -35,6 +35,21 @@ npm start
 - Right-click her, or use the tray, for Go Left/Right, Run Left/Right, Go to Top, Come Down,
   Sleep, Wake Up, gestures, expressions, size and gravity
 
+## Keyboard shortcuts
+
+These work from any app. On macOS, `Alt` is the `Option` key.
+
+| Shortcut | Action |
+|---|---|
+| `Control + Option + ←` / `→` | Go left / right |
+| `Control + Option + Shift + ←` / `→` | Run left / right |
+| `Control + Option + ↑` / `↓` | Go to top / come down |
+| `Control + Option + J` | Jump |
+| `Control + Option + S` | Sleep / wake up |
+| `Control + Option + G` | Random gesture |
+| `Control + Option + C` | Open chat |
+| `Control + Option + H` | Hide / show |
+
 ## Structure
 
 - `src/main.js`: window, tray, drag, gravity, walking and local asset serving

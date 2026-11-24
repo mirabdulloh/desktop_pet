@@ -1,4 +1,15 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, dialog, safeStorage } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  ipcMain,
+  screen,
+  protocol,
+  dialog,
+  safeStorage,
+  globalShortcut,
+} = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { Chat } = require('./chat');
@@ -19,6 +30,19 @@ const RISE_PIXELS_PER_FRAME = 7;
 const SCALES = { Small: 0.75, Medium: 1, Large: 1.3 };
 const CONTENT_TYPES = { '.json': 'application/json', '.png': 'image/png', '.moc3': 'application/octet-stream' };
 const MAX_CHAT_LENGTH = 2000;
+const KEYS = {
+  goLeft: 'Control+Alt+Left',
+  goRight: 'Control+Alt+Right',
+  runLeft: 'Control+Alt+Shift+Left',
+  runRight: 'Control+Alt+Shift+Right',
+  top: 'Control+Alt+Up',
+  down: 'Control+Alt+Down',
+  sleep: 'Control+Alt+S',
+  jump: 'Control+Alt+J',
+  gesture: 'Control+Alt+G',
+  chat: 'Control+Alt+C',
+  hide: 'Control+Alt+H',
+};
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'pet-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -34,6 +58,7 @@ let motion = null;
 let walk = null;
 let rise = null;
 let interactive = false;
+let unavailableKeys = [];
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
 const keyPath = () => path.join(app.getPath('userData'), 'api-key.bin');
@@ -337,30 +362,67 @@ function actionItems() {
     click: () => send('pet:action', { type: 'expression', id }),
   }));
   return [
-    { label: `Chat with ${character.name}`, click: openChat },
+    { label: `Chat with ${character.name}`, accelerator: KEYS.chat, registerAccelerator: false, click: openChat },
     { label: 'Clear Chat', click: () => chat.clear() },
     { label: 'Remove API Key', enabled: fs.existsSync(keyPath()), click: removeApiKey },
     { type: 'separator' },
-    { label: 'Random Gesture', click: () => send('pet:action', { type: 'gesture' }) },
+    {
+      label: 'Random Gesture',
+      accelerator: KEYS.gesture,
+      registerAccelerator: false,
+      click: () => send('pet:action', { type: 'gesture' }),
+    },
     { label: 'Gestures', submenu: gestures },
     { label: 'Expressions', submenu: expressions },
   ];
 }
 
 function movementItems() {
-  const action = (label, payload) => ({ label, click: () => send('pet:action', payload) });
+  const action = (label, payload, accelerator) => ({
+    label,
+    accelerator,
+    registerAccelerator: false,
+    click: () => send('pet:action', payload),
+  });
   return [
-    action('Go Left', { type: 'walk', dir: -1 }),
-    action('Go Right', { type: 'walk', dir: 1 }),
-    action('Run Left', { type: 'walk', dir: -1, run: true }),
-    action('Run Right', { type: 'walk', dir: 1, run: true }),
-    action('Go to Top', { type: 'top' }),
-    action('Come Down', { type: 'down' }),
+    action('Go Left', { type: 'walk', dir: -1 }, KEYS.goLeft),
+    action('Go Right', { type: 'walk', dir: 1 }, KEYS.goRight),
+    action('Run Left', { type: 'walk', dir: -1, run: true }, KEYS.runLeft),
+    action('Run Right', { type: 'walk', dir: 1, run: true }, KEYS.runRight),
+    action('Go to Top', { type: 'top' }, KEYS.top),
+    action('Come Down', { type: 'down' }, KEYS.down),
+    action('Jump', { type: 'jump' }, KEYS.jump),
     { type: 'separator' },
-    action('Sleep', { type: 'sleep' }),
-    action('Wake Up', { type: 'wake' }),
+    action('Sleep / Wake Up', { type: 'toggle-sleep' }, KEYS.sleep),
     { type: 'separator' },
   ];
+}
+
+function toggleVisible() {
+  if (!win) return;
+  if (win.isVisible()) win.hide();
+  else win.showInactive();
+}
+
+function registerShortcuts() {
+  const act = (payload) => () => {
+    if (win && !win.isVisible()) win.showInactive();
+    send('pet:action', payload);
+  };
+  const bindings = [
+    [KEYS.goLeft, act({ type: 'walk', dir: -1 })],
+    [KEYS.goRight, act({ type: 'walk', dir: 1 })],
+    [KEYS.runLeft, act({ type: 'walk', dir: -1, run: true })],
+    [KEYS.runRight, act({ type: 'walk', dir: 1, run: true })],
+    [KEYS.top, act({ type: 'top' })],
+    [KEYS.down, act({ type: 'down' })],
+    [KEYS.sleep, act({ type: 'toggle-sleep' })],
+    [KEYS.jump, act({ type: 'jump' })],
+    [KEYS.gesture, act({ type: 'gesture' })],
+    [KEYS.chat, openChat],
+    [KEYS.hide, toggleVisible],
+  ];
+  unavailableKeys = bindings.filter(([key, handler]) => !globalShortcut.register(key, handler)).map(([key]) => key);
 }
 
 function refreshTray() {
@@ -394,7 +456,10 @@ function refreshTray() {
           if (item.checked) startFall();
         },
       },
-      { label: 'Show / Hide', click: () => win && (win.isVisible() ? win.hide() : win.show()) },
+      { label: 'Show / Hide', accelerator: KEYS.hide, registerAccelerator: false, click: toggleVisible },
+      ...(unavailableKeys.length
+        ? [{ label: `Shortcuts in use by another app: ${unavailableKeys.length}`, enabled: false }]
+        : []),
       { type: 'separator' },
       { label: 'This content uses sample data owned and copyrighted by Live2D Inc.', enabled: false },
       { label: 'Quit', click: () => app.quit() },
@@ -528,9 +593,12 @@ if (!app.requestSingleInstanceLock()) {
 
     tray = new Tray(path.join(__dirname, '..', 'build', 'tray.png'));
     tray.setToolTip('Desktop Pet');
+    registerShortcuts();
     refreshTray();
     setInterval(tick, 16);
   });
+
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 
   // The pet lives in the tray, so closing its window must not end the app.
   app.on('window-all-closed', () => {});

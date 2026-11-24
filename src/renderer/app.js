@@ -420,7 +420,8 @@ window.pet.onMotion(({ type, impact }) => {
   }
 });
 
-window.pet.onAction((action) => {
+window.pet.onAction((incoming) => {
+  const action = incoming.type === 'toggle-sleep' ? { type: sleeping ? 'wake' : 'sleep' } : incoming;
   if (!model || motion === 'drag' || motion === 'fall') return;
   if (action.type === 'down') {
     window.pet.comeDown();
@@ -441,6 +442,10 @@ window.pet.onAction((action) => {
   if (action.type === 'gesture') playGesture(action.index);
   else if (action.type === 'expression') setExpression(action.id, 5000);
   else if (action.type === 'top') window.pet.goTop();
+  else if (action.type === 'jump') {
+    squashVelocity = -3;
+    setTimeout(() => window.pet.jump(), 110);
+  }
   else if (action.type === 'walk') {
     if (action.run) sayFrom('run', 1200);
     window.pet.walk(action.dir, action.run ? 420 : 220, action.run ? 'run' : 'walk', true);
