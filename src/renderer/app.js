@@ -15,7 +15,7 @@ const chatNote = document.getElementById('chat-note');
 const chatSend = document.getElementById('chat-send');
 
 const CHAT_ERRORS = {
-  rate: 'Too many messages right now. Try again in a moment.',
+  rate: "We've hit the usage limit for now. Let's talk again a bit later.",
   connection: "I can't reach the internet right now.",
   billing: 'Your API account needs credits before I can reply.',
   refused: "Sorry, I can't talk about that.",
@@ -361,7 +361,9 @@ function showChat(hasKey, focus = true) {
   needsKey = !hasKey;
   chatForm.hidden = false;
   chatNote.hidden = !needsKey;
-  chatNote.textContent = needsKey ? 'Paste your Anthropic API key. It is stored encrypted on this Mac.' : '';
+  chatNote.textContent = needsKey
+    ? 'Run "claude auth login" in Terminal to use your Claude plan, or paste an API key here.'
+    : '';
   chatInput.type = needsKey ? 'password' : 'text';
   chatInput.placeholder = needsKey ? 'API key' : `Message ${character.name}...`;
   chatInput.value = '';
@@ -433,6 +435,9 @@ async function sendMessage(text) {
   } else if (result.error === 'auth') {
     showChat(false);
     chatNote.textContent = 'That API key did not work. Paste a valid key.';
+    bubble.classList.remove('visible');
+  } else if (result.error === 'login') {
+    showChat(false);
     bubble.classList.remove('visible');
   } else if (result.error !== 'cancelled') {
     setMood('sad', 2500);

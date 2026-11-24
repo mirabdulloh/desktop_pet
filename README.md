@@ -37,7 +37,7 @@ npm start
 ## Structure
 
 - `src/main.js`: window, tray, drag, gravity, walking and local asset serving
-- `src/chat.js`: streaming Claude conversation
+- `src/chat.js`: streaming Claude conversation through your plan or an API key
 - `src/preload.js`: the small `window.pet` bridge
 - `src/renderer/app.js`: Live2D rendering, reactions and speech
 - `characters/<id>/character.json`: name, size, expressions, moods and lines
@@ -45,16 +45,30 @@ npm start
 
 ## AI chat
 
-Type in the box under Haru. If you close it, click her to bring it back. The first time, paste an
-[Anthropic API key](https://platform.claude.com/settings/keys). It is encrypted with the
-macOS Keychain through Electron `safeStorage`, stored in the app's data folder, and never
-added to this repository. **Remove API Key** in the menu deletes it.
+Type in the box under Haru. If you close it, click her to bring it back.
 
-- Replies come from Claude Opus 5.5 (`claude-opus-5-5`) at low effort and stream into her
-  speech bubble while her mouth moves. API usage is billed to your Anthropic account.
+**With your own Claude plan (personal use):** install
+[Claude Code](https://code.claude.com/docs) and sign in. Haru then uses your plan's usage
+limits, with all tools turned off so chat can only produce text.
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+```bash
+claude auth login
+```
+
+**With an API key (required if you distribute the app):** paste an
+[Anthropic API key](https://platform.claude.com/settings/keys) into the box. It is encrypted
+with the macOS Keychain, kept in the app's data folder, and takes priority over a plan
+login. **Remove API Key** in the menu deletes it. Anthropic does not allow apps to route
+other people's requests through a Claude plan, so public releases must use API keys.
+
+- Replies stream into her speech bubble while her mouth moves.
 - Each reply starts with a mood tag that sets her expression.
 - The conversation lasts until you quit or choose **Clear Chat**. It is not saved to disk.
-- Server-side refusal fallback is on, so a declined request can be retried on another model.
+- In API mode, server-side refusal fallback can retry a declined request on another model.
 - Her personality is the `persona` field in `characters/haru/character.json`.
 
 ## Roadmap

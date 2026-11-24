@@ -40,23 +40,29 @@ function readApiKey() {
   }
 }
 
-const hasCredentials = () =>
-  fs.existsSync(keyPath()) || Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+const chat = new Chat(
+  () => (fs.existsSync(keyPath()) ? readApiKey() : null),
+  path.join(app.getPath('temp'), 'desktop-pet-chat'),
+);
 
-const chat = new Chat(() => (fs.existsSync(keyPath()) ? readApiKey() : null));
+async function hasCredentials() {
+  if (fs.existsSync(keyPath()) || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return true;
+  return chat.planAvailable();
+}
 
-function openChat() {
+async function openChat() {
   if (!win) return;
   win.show();
   app.focus({ steal: true });
   win.focus();
-  send('pet:chat-open', { hasKey: hasCredentials() });
+  send('pet:chat-open', { hasKey: await hasCredentials() });
 }
 
-function removeApiKey() {
+async function removeApiKey() {
   fs.rmSync(keyPath(), { force: true });
   chat.clear();
-  send('pet:chat-open', { hasKey: hasCredentials() });
+  refreshTray();
+  send('pet:chat-open', { hasKey: await hasCredentials() });
 }
 
 function loadSettings() {
