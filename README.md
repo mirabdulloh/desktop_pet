@@ -51,6 +51,13 @@ Click **Import VRM model** on the card, or use **Import VRM Model…** in the tr
 - [ ] Settings window
 - [ ] Packaged app with `electron-builder`
 
+## Credits
+
+Marin's look on the development machine comes from
+[My Dress-Up Darling Marin Kitagawa V3](https://hub.vroid.com/en/characters/6807013657873079276/models/4162964451151177755)
+by **Haru** on VRoid Hub, based on *Sono Bisque Doll wa Koi wo Suru*. The model is not
+included here: its terms do not allow redistribution, alterations or commercial use.
+
 ## License
 
 Code is MIT (see [LICENSE](LICENSE)). Characters and models belong to their owners, so

@@ -10,6 +10,7 @@ const empty = document.getElementById('empty');
 const TOP_ROOM = 0.13;
 const BOTTOM_ROOM = 0.015;
 const DRAG_THRESHOLD = 4;
+const FINGER_CURL = 0.38;
 
 const MOODS = {
   neutral: {},
@@ -20,11 +21,11 @@ const MOODS = {
 const EXPRESSIONS = ['happy', 'surprised', 'relaxed', 'blink'];
 
 const POSES = {
-  idle: { armL: -1.22, armR: 1.22, foreL: -0.12, foreR: 0.12, lean: 0 },
-  wave: { armL: -1.22, armR: -0.95, foreL: -0.12, foreR: -0.55, lean: 0 },
+  idle: { armL: -1.38, armR: 1.38, foreL: -0.22, foreR: 0.12, lean: 0 },
+  wave: { armL: -1.38, armR: 0.35, foreL: -0.22, foreR: -1.65, lean: 0 },
   drag: { armL: -0.55, armR: 0.55, foreL: -0.25, foreR: 0.25, lean: 0.08 },
   fall: { armL: 0.45, armR: -0.45, foreL: 0.2, foreR: -0.2, lean: -0.05 },
-  sleep: { armL: -1.32, armR: 1.32, foreL: -0.05, foreR: 0.05, lean: 0.12 },
+  sleep: { armL: -1.45, armR: 1.45, foreL: -0.05, foreR: 0.05, lean: 0.12 },
 };
 
 const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: true });
@@ -36,8 +37,8 @@ const camera = new THREE.PerspectiveCamera(16, 1, 0.1, 40);
 const rig = new THREE.Group();
 const lookTarget = new THREE.Object3D();
 scene.add(rig, lookTarget);
-scene.add(new THREE.AmbientLight(0xffffff, 1.1));
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.1);
+scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+const keyLight = new THREE.DirectionalLight(0xffffff, 2.3);
 keyLight.position.set(0.6, 1.4, 2);
 scene.add(keyLight);
 
@@ -212,7 +213,10 @@ function bone(name) {
 
 function setRotation(name, x, y, z) {
   const node = bone(name);
-  if (node) node.rotation.set(x, y, z);
+  if (!node) return;
+  // VRM 0.x rigs face the opposite way, which flips the X and Z rotation axes.
+  const flip = vrm.meta.metaVersion === '0' ? -1 : 1;
+  node.rotation.set(x * flip, y, z * flip);
 }
 
 function applyPose(time, dt) {
@@ -235,6 +239,13 @@ function applyPose(time, dt) {
   setRotation('rightLowerArm', 0, 0, current.foreR + wave);
   setRotation('leftUpperLeg', dangle, 0, 0.02);
   setRotation('rightUpperLeg', -dangle, 0, -0.02);
+
+  for (const finger of ['Index', 'Middle', 'Ring', 'Little']) {
+    for (const joint of ['Proximal', 'Intermediate', 'Distal']) {
+      setRotation(`left${finger}${joint}`, 0, 0, -FINGER_CURL);
+      setRotation(`right${finger}${joint}`, 0, 0, FINGER_CURL);
+    }
+  }
 }
 
 function updateLook(dt) {
@@ -245,8 +256,8 @@ function updateLook(dt) {
 
   lookTarget.position.set(rig.position.x + dx, rig.position.y + view.centerY + (innerHeight / 2 - cursor.y) * scale, 1.2);
 
-  const yaw = sleeping ? 0 : clamp(Math.atan2(dx, 1.6), -0.55, 0.55);
-  const pitch = sleeping ? 0.38 : clamp(-Math.atan2(dy, 1.6), -0.3, 0.3);
+  const yaw = sleeping ? 0 : clamp(Math.atan2(dx, 3), -0.32, 0.32);
+  const pitch = sleeping ? 0.38 : clamp(-Math.atan2(dy, 3), -0.16, 0.16);
   current.headY = damp(current.headY, yaw, 6, dt);
   current.headX = damp(current.headX, pitch, 6, dt);
 }
