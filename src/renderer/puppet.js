@@ -1,6 +1,14 @@
 import { Spring, noise } from './motion.js';
 
 const num = (value) => value.toFixed(3);
+const LIMB_LENGTHS = {
+  armL: 'lenArmL',
+  foreL: 'lenForeL',
+  armR: 'lenArmR',
+  foreR: 'lenForeR',
+  legL: 'lenLegL',
+  legR: 'lenLegR',
+};
 
 export class Puppet {
   constructor(svg) {
@@ -14,6 +22,7 @@ export class Puppet {
         sway: Number(el.dataset.sway) || 0,
         follow: Number(el.dataset.follow) || 0,
         parallax: Number(el.dataset.parallax) || 0,
+        frequency: Number(el.dataset.freq) || 5,
         spring: new Spring(0, Number(el.dataset.freq) || 5, Number(el.dataset.damp) || 0.72),
       });
     });
@@ -54,7 +63,7 @@ export class Puppet {
   }
 
   step(dt, time, input) {
-    const { pose, look, eye, face, accel, facing, breathRate } = input;
+    const { pose, look, eye, face, accel, facing, breathRate, tight } = input;
     const s = this.s;
 
     s.lookX.target = look.x * facing;
@@ -86,7 +95,9 @@ export class Puppet {
 
     const head = this.joints.get('head');
     for (const [name, joint] of this.joints) {
-      joint.spring.target = (pose[name] || 0) + (additive[name] || 0);
+      // Baked clips already contain timing, so their joints track closer than hand-posed ones.
+      joint.spring.frequency = tight && !joint.sway ? joint.frequency * 2.6 : joint.frequency;
+      joint.spring.target = (pose[name] || 0) + (additive[name] || 0) * (tight ? 0.35 : 1);
       if (joint.follow) joint.spring.target += head.spring.value * joint.follow;
       if (joint.sway) {
         joint.spring.velocity += (-accel.x * 42 + Math.abs(accel.y) * Math.sin(time * 9) * 12) * joint.sway * dt * 60;
@@ -95,10 +106,10 @@ export class Puppet {
       joint.spring.step(dt);
     }
 
-    this.render(breath);
+    this.render(breath, pose);
   }
 
-  render(breath) {
+  render(breath, pose) {
     const s = this.s;
     const sy = s.squashY.value + breath * 0.009;
     const sx = 1 / Math.sqrt(Math.max(sy, 0.6));
@@ -110,7 +121,22 @@ export class Puppet {
       if (name === 'root') {
         joint.el.setAttribute(
           'transform',
-          `translate(${joint.px} ${joint.py}) rotate(${angle}) scale(${num(sx * flip)} ${num(sy)}) translate(${-joint.px} ${-joint.py})`,
+          `translate(${num(joint.px + (pose.dx || 0) * flip)} ${num(joint.py + (pose.dy || 0))}) rotate(${angle}) scale(${num(sx * flip)} ${num(sy)}) translate(${-joint.px} ${-joint.py})`,
+        );
+      } else if (name === 'footL' || name === 'footR') {
+        // Cancels the leg's rotation and stretch so the shoe stays flat on the ground.
+        const leg = name === 'footL' ? 'legL' : 'legR';
+        const legAngle = this.joints.get(leg).spring.value;
+        const length = Math.max(pose[LIMB_LENGTHS[leg]] ?? 1, 0.1);
+        joint.el.setAttribute(
+          'transform',
+          `translate(${joint.px} ${joint.py}) scale(1 ${num(1 / length)}) rotate(${num(-legAngle)}) translate(${-joint.px} ${-joint.py})`,
+        );
+      } else if (LIMB_LENGTHS[name]) {
+        const length = pose[LIMB_LENGTHS[name]] ?? 1;
+        joint.el.setAttribute(
+          'transform',
+          `translate(${joint.px} ${joint.py}) rotate(${angle}) scale(1 ${num(length)}) translate(${-joint.px} ${-joint.py})`,
         );
       } else {
         joint.el.setAttribute('transform', `rotate(${angle} ${joint.px} ${joint.py})`);

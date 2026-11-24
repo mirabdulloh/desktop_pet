@@ -92,19 +92,23 @@
       <path d="M95 240 H113 L112 272 H97Z" fill="url(#sz-limb)" stroke="#a9786c" stroke-width="1.2"/>
       <path d="M95.5 262 H112.5 L113 276 H96Z" fill="#ffffff" stroke="#b7bfd6" stroke-width="1.1"/>
       <path d="M96 265.5 H112.5" stroke="#7ddcc0" stroke-width="2"/>
+      <g data-joint="footL" data-pivot="104 272">
       <path d="M86 285 C85 276 92 272 98 271 L113 271 C118 276 119 281 118 286Z" fill="url(#sz-shoe)" stroke="#8a3a35" stroke-width="1.3" stroke-linejoin="round"/>
       <path d="M86 283 C84 285 85 289 89 289 H115 C118 289 119 286 118 283Z" fill="#ffffff" stroke="#a8afc7" stroke-width="1.1"/>
       <path d="M100 273 L106 277 M104 272 L110 276" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round"/>
       <path d="M88 280 Q92 275 96 275" fill="none" stroke="#ffd4cb" stroke-width="1.6" stroke-linecap="round"/>
+      </g>
     </g>
     <g data-joint="legR" data-pivot="136 236" data-freq="6" data-damp="0.68">
       <path d="M127 240 H145 L143 272 H128Z" fill="url(#sz-limb)" stroke="#a9786c" stroke-width="1.2"/>
       <path d="M127.5 262 H144.5 L144 276 H127Z" fill="#ffffff" stroke="#b7bfd6" stroke-width="1.1"/>
       <path d="M127.5 265.5 H144" stroke="#7ddcc0" stroke-width="2"/>
+      <g data-joint="footR" data-pivot="136 272">
       <path d="M154 285 C155 276 148 272 142 271 L127 271 C122 276 121 281 122 286Z" fill="url(#sz-shoe)" stroke="#8a3a35" stroke-width="1.3" stroke-linejoin="round"/>
       <path d="M154 283 C156 285 155 289 151 289 H125 C122 289 121 286 122 283Z" fill="#ffffff" stroke="#a8afc7" stroke-width="1.1"/>
       <path d="M140 273 L134 277 M136 272 L130 276" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round"/>
       <path d="M152 280 Q148 275 144 275" fill="none" stroke="#ffd4cb" stroke-width="1.6" stroke-linecap="round"/>
+      </g>
     </g>
 
     <path d="M86 230 L154 230 L159 259 L127 259 L120 247 L113 259 L81 259Z" fill="url(#sz-shorts)" stroke="#23213f" stroke-width="1.5" stroke-linejoin="round"/>

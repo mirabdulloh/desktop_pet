@@ -1,4 +1,5 @@
 import { Puppet } from './puppet.js';
+import { ActionPlayer } from './actions.js';
 import { noise, clamp } from './motion.js';
 
 const mount = document.getElementById('puppet-mount');
@@ -62,6 +63,8 @@ const CLIPS = {
 
 let character = null;
 let puppet = null;
+let player = null;
+let walkAction = 'walk';
 let svg = null;
 let cursor = { x: -1, y: -1 };
 let previousCursor = null;
@@ -74,7 +77,6 @@ let mood = 'neutral';
 let moodUntil = 0;
 let clip = null;
 let facing = 1;
-let walkPhase = 0;
 let press = null;
 let sleeping = false;
 let lastActivity = performance.now();
@@ -91,6 +93,7 @@ let typeTimer = null;
 let hideTimer = null;
 let talkingUntil = 0;
 let lastInteractive = null;
+let hardLanding = false;
 
 const randomFrom = (list) => (list && list.length ? list[Math.floor(Math.random() * list.length)] : null);
 const between = ([min, max]) => min + Math.random() * (max - min);
@@ -148,6 +151,7 @@ function wake() {
   lastActivity = performance.now();
   if (!sleeping) return;
   sleeping = false;
+  player.play('idle', 0.5);
   setMood('surprised', 800);
   puppet.squash(0.08);
   sayFrom('wake');
@@ -170,18 +174,6 @@ function basePose(time) {
     });
   } else if (motion === 'fall') {
     Object.assign(pose, { armL: 108, armR: -108, foreL: 36, foreR: -36, legL: 12, legR: -18, head: -5 });
-  } else if (motion === 'walk') {
-    const stride = Math.sin(walkPhase);
-    Object.assign(pose, {
-      legL: stride * 15,
-      legR: -stride * 15,
-      armL: 5 - stride * 13,
-      armR: -5 - stride * 13,
-      foreL: -14,
-      foreR: 14,
-      torso: 3 + Math.sin(walkPhase * 2) * 1.2,
-      head: -Math.sin(walkPhase) * 2,
-    });
   } else if (sleeping) {
     Object.assign(pose, { head: 17, torso: 5, armL: 1, armR: -1, foreL: -2, foreR: 2 });
   }
@@ -235,14 +227,37 @@ function faceFor(time, now) {
   return face;
 }
 
+function playAction(name) {
+  const action = character.actions[name];
+  if (!action || !puppet || motion === 'drag' || motion === 'fall') return;
+  wake();
+  clip = null;
+  if (motion === 'walk') {
+    window.pet.stopWalk();
+    motion = 'rest';
+    facing = 1;
+  }
+  if (action.move) {
+    walkAction = name;
+    window.pet.walk(Math.random() < 0.5 ? -1 : 1, 90 + Math.random() * 190, action.move);
+    return;
+  }
+  player.play(name);
+  setMood(action.mood || 'neutral', action.mood ? 3000 : 0);
+  if (action.talk) talkingUntil = performance.now() + (action.hold || 3) * 1000;
+}
+
 function chooseAction(now) {
   if (motion !== 'rest' || sleeping || clip || press || now < nextAction) return;
+  if (player.name !== 'idle') return;
   nextAction = now + between(character.idleActionMs);
   const roll = Math.random();
-  if (roll < 0.3) {
-    window.pet.walk(Math.random() < 0.5 ? -1 : 1, 50 + Math.random() * 180);
+  if (roll < 0.28) {
+    playAction(randomFrom(['walk', 'walk', 'stroll', 'jog']));
+  } else if (roll < 0.72) {
+    playAction(randomFrom(Object.keys(character.actions).filter((id) => character.actions[id].idle)));
   } else {
-    playClip(randomFrom(['tilt', 'hum', 'fidget', 'stretch', 'nod', 'tilt', 'hum']));
+    playClip(randomFrom(['tilt', 'hum', 'fidget', 'stretch', 'nod']));
   }
   if (now > nextLine) {
     nextLine = now + between(character.idleLineIntervalMs);
@@ -297,10 +312,10 @@ function frame(now) {
   if (!sleeping && motion === 'rest' && now - lastActivity > character.sleepAfterMs) {
     sleeping = true;
     clip = null;
+    player.stop(0.7);
     bubble.classList.remove('visible');
   }
   if (sleeping && Math.random() < dt * 0.55) burst('z', 1, 'sleep');
-  if (motion === 'walk') walkPhase += dt * 11;
 
   chooseAction(now);
   const over = updateHit();
@@ -308,7 +323,8 @@ function frame(now) {
 
   const { look, eye } = gaze(time);
   puppet.step(dt, time, {
-    pose: clipPose(now, basePose(time)),
+    pose: clipPose(now, player.apply(basePose(time), dt)),
+    tight: player.active,
     look,
     eye,
     face: faceFor(time, now),
@@ -337,30 +353,40 @@ window.pet.onMotion(({ type, impact, dir }) => {
   if (type !== 'walk' && type !== 'walk-end') wake();
   if (type === 'drag') {
     motion = 'drag';
+    player.stop(0.14);
     document.body.classList.add('dragging');
     setMood('surprised');
     puppet.squash(-0.1);
     sayFrom('drag', 1400);
   } else if (type === 'fall') {
     motion = 'fall';
+    player.stop(0.14);
     document.body.classList.remove('dragging');
     setMood('surprised');
   } else if (type === 'land') {
     puppet.squash(clamp(impact * 0.012, 0.08, 0.26));
+    hardLanding = hardLanding || impact > 22;
     if (impact > 22) sayFrom('land', 1500);
   } else if (type === 'rest') {
     motion = 'rest';
     document.body.classList.remove('dragging');
-    setMood('neutral');
+    setMood(hardLanding ? 'surprised' : 'neutral', hardLanding ? 700 : 0);
+    player.play(hardLanding ? 'ouch' : 'idle');
+    hardLanding = false;
     nextAction = performance.now() + 2500;
   } else if (type === 'walk') {
     motion = 'walk';
     facing = dir;
-  } else if (type === 'walk-end') {
+    player.play(walkAction);
+  } else if (type === 'walk-end' && motion === 'walk') {
     motion = 'rest';
     facing = 1;
+    walkAction = 'walk';
+    player.play('idle', 0.35);
   }
 });
+
+window.pet.onAction(playAction);
 
 mount.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;
@@ -399,12 +425,23 @@ mount.addEventListener('dblclick', () => {
   puppet.squash(0.2);
   setTimeout(() => window.pet.jump(), 110);
 });
+mount.addEventListener('contextmenu', (event) => {
+  event.preventDefault();
+  window.pet.showMenu();
+});
 
 (async () => {
   character = await window.pet.getCharacter();
   mount.innerHTML = character.svg;
   svg = mount.querySelector('svg');
   puppet = new Puppet(svg);
+  player = new ActionPlayer(character.actions, character.animations, () => {
+    if (motion === 'rest' && !sleeping) {
+      player.play('idle', 0.35);
+      nextAction = performance.now() + between(character.idleActionMs);
+    }
+  });
+  player.play('idle', 0.01);
   setMood('happy', 1600);
   sayFrom('greet');
   nextLine = performance.now() + between(character.idleLineIntervalMs);

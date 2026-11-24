@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "build": "esbuild src/renderer/app.js --bundle --format=iife --minify --outfile=src/renderer/bundle.js --log-level=warning",
+    "bake": "node tools/bake-animations.js",
     "start": "npm run build && electron ."
   },
   "author": "mirabdulloh",

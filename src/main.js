@@ -46,7 +46,13 @@ function listCharacterIds() {
 function loadCharacter(id) {
   const dir = path.join(CHARACTERS_DIR, id);
   const config = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf-8'));
-  return { ...config, id, svg: fs.readFileSync(path.join(dir, config.puppet), 'utf-8') };
+  return {
+    ...config,
+    id,
+    svg: fs.readFileSync(path.join(dir, config.puppet), 'utf-8'),
+    actions: JSON.parse(fs.readFileSync(path.join(dir, 'actions.json'), 'utf-8')),
+    animations: JSON.parse(fs.readFileSync(path.join(dir, 'animations.json'), 'utf-8')),
+  };
 }
 
 function windowSize() {
@@ -110,8 +116,9 @@ function stepPhysics() {
 function stepWalk() {
   const area = workArea();
   const maxX = area.x + area.width - windowSize().width;
-  pos.x += walk.dir * WALK_SPEED;
-  walk.remaining -= WALK_SPEED;
+  const stride = WALK_SPEED * walk.speed;
+  pos.x += walk.dir * stride;
+  walk.remaining -= stride;
   if (walk.remaining <= 0 || pos.x <= area.x || pos.x >= maxX) {
     pos.x = Math.min(Math.max(pos.x, area.x), maxX);
     walk = null;
@@ -216,6 +223,12 @@ function setScale(scale) {
   refreshTray();
 }
 
+function actionItems() {
+  return Object.entries(character.actions)
+    .filter(([, action]) => action.label)
+    .map(([id, action]) => ({ label: action.label, click: () => send('pet:action', id) }));
+}
+
 function refreshTray() {
   const characters = listCharacterIds().map((id) => ({
     label: loadCharacter(id).name || id,
@@ -236,6 +249,7 @@ function refreshTray() {
       { type: 'separator' },
       ...characters,
       { type: 'separator' },
+      { label: 'Actions', submenu: actionItems() },
       { label: 'Size', submenu: sizes },
       {
         label: 'Gravity',
@@ -291,10 +305,30 @@ ipcMain.on('pet:jump', () => {
   startFall((Math.random() - 0.5) * 4, -13);
 });
 
-ipcMain.on('pet:walk', (_event, { dir, distance }) => {
+ipcMain.on('pet:walk', (_event, { dir, distance, speed = 1 }) => {
   if (drag || motion || walk) return;
-  walk = { dir: dir < 0 ? -1 : 1, remaining: Math.min(Math.max(distance, 0), 400) };
+  walk = {
+    dir: dir < 0 ? -1 : 1,
+    remaining: Math.min(Math.max(distance, 0), 400),
+    speed: Math.min(Math.max(speed, 0.5), 4),
+  };
   send('pet:motion', { type: 'walk', dir: walk.dir });
+});
+
+ipcMain.on('pet:walk-stop', () => {
+  if (!walk) return;
+  walk = null;
+  saveSettings({ x: Math.round(pos.x), y: Math.round(pos.y) });
+});
+
+ipcMain.on('pet:show-menu', () => {
+  if (!win) return;
+  Menu.buildFromTemplate([
+    ...actionItems(),
+    { type: 'separator' },
+    { label: 'Hide', click: () => win && win.hide() },
+    { label: 'Quit', click: () => app.quit() },
+  ]).popup({ window: win });
 });
 
 if (!app.requestSingleInstanceLock()) {

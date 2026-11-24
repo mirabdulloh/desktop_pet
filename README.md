@@ -38,6 +38,23 @@ npm start
 `speak(text)` and `setMood(name)` in `app.js` are the natural entry points for a future AI
 chat: the bubble types the reply and her mouth moves with it.
 
+## Actions
+
+Right-click Suzu, or open **Actions** in the tray, to trigger any action. She also picks
+idle actions herself. Actions live in `characters/suzu/actions.json`:
+
+```json
+"dance": { "clip": "Dance_Loop", "label": "Dance", "loop": true, "hold": 6, "mood": "happy", "idle": true }
+```
+
+To add one, add a line using any clip from the
+[Universal Animation Library](https://opengameart.org/content/universal-animation-library),
+then convert it with the pack's Godot `.glb` file:
+
+```bash
+npm run bake -- /path/to/AnimationLibrary_Godot_Standard.glb
+```
+
 ## Add a character
 
 Copy `characters/suzu/` to `characters/<new-id>/`, keep the `data-joint` layers, redraw the
@@ -53,4 +70,6 @@ art, and edit `character.json`. It appears in the tray automatically.
 
 ## License
 
-Code and the Suzu character art are MIT (see [LICENSE](LICENSE)).
+Code and the Suzu character art are MIT (see [LICENSE](LICENSE)). Motion data is converted
+from the [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html)
+by Quaternius, released under CC0.
