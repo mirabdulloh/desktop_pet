@@ -51,6 +51,7 @@ const MAX_ENV_FILE_BYTES = 256 * 1024;
 const MAX_EXPORT_BYTES = 200 * 1024 * 1024;
 const MAX_LEARN_CHATS = 10;
 const MAX_DRAFT_LENGTH = 4096;
+const EXPORT_SETTLE_MS = 1500;
 const KEYS = {
   goLeft: 'Control+Alt+Left',
   goRight: 'Control+Alt+Right',
@@ -745,19 +746,20 @@ handleTelegramIpc('telegram:import', async () => {
   if (canceled || !filePaths[0]) return { ok: false, cancelled: true };
   if (fs.statSync(filePaths[0]).size > MAX_EXPORT_BYTES) return { ok: false, error: 'That export is too large for the demo.' };
 
+  const unfinishedError = 'This export is not finished yet. Wait until Telegram says Done, then import again.';
+  // Telegram writes result.json gradually, so a file that is still growing is not ready.
+  const sizeBefore = fs.statSync(filePaths[0]).size;
+  await new Promise((resolve) => setTimeout(resolve, EXPORT_SETTLE_MS));
+  if (fs.statSync(filePaths[0]).size !== sizeBefore) return { ok: false, error: unfinishedError };
+
   let data;
   const raw = await fs.promises.readFile(filePaths[0], 'utf-8');
   try {
     data = JSON.parse(raw);
-  } catch {
-    // Telegram writes result.json gradually, so an unfinished export is cut off mid-file.
-    const unfinished = raw.trimStart().startsWith('{') && !raw.trimEnd().endsWith('}');
-    return {
-      ok: false,
-      error: unfinished
-        ? 'This export is not finished yet. Wait until Telegram says Done, then import again.'
-        : "That file isn't a valid Telegram JSON export.",
-    };
+  } catch (error) {
+    const position = Number(String(error.message).match(/position (\d+)/)?.[1]);
+    const cutOff = /end of JSON input/i.test(error.message) || position >= raw.trimEnd().length - 1;
+    return { ok: false, error: cutOff ? unfinishedError : "That file isn't a valid Telegram JSON export." };
   }
   let chats = parseExport(data);
   if (!chats) {
