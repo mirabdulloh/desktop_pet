@@ -11,7 +11,7 @@ const HEAD = { x: 0.5, y: 0.42 };
 const REST = { armL: 4, armR: -4, foreL: -5, foreR: 5, legL: 0, legR: 0, torso: 0, head: 0, root: 0 };
 
 const MOODS = {
-  neutral: { smile: 0.42, happy: 0, open: 0, brow: 0, blush: 0.25, lid: 1 },
+  neutral: { smile: 0.68, happy: 0, open: 0, brow: 0, blush: 0.25, lid: 1 },
   happy: { smile: 1, happy: 1, open: 0.45, brow: -2, blush: 0.75, lid: 1 },
   surprised: { smile: 0, happy: 0, open: 0.75, brow: -6, blush: 0.3, lid: 1.12 },
   shy: { smile: 0.75, happy: 0, open: 0, brow: 1.5, blush: 0.85, lid: 0.72 },
