@@ -1,8 +1,9 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, screen, protocol, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const CHARACTERS_DIR = path.join(__dirname, '..', 'characters');
+const LIVE2D_DIR = path.join(__dirname, '..', 'vendor', 'live2d');
 const GRAVITY = 0.9;
 const BOUNCE = 0.32;
 const AIR_DRAG = 0.992;
@@ -10,6 +11,11 @@ const FLOOR_FRICTION = 0.8;
 const MAX_THROW_SPEED = 45;
 const WALK_SPEED = 1.15;
 const SCALES = { Small: 0.75, Medium: 1, Large: 1.3 };
+const CONTENT_TYPES = { '.json': 'application/json', '.png': 'image/png', '.moc3': 'application/octet-stream' };
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'pet-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+]);
 
 let win = null;
 let tray = null;
@@ -44,15 +50,8 @@ function listCharacterIds() {
 }
 
 function loadCharacter(id) {
-  const dir = path.join(CHARACTERS_DIR, id);
-  const config = JSON.parse(fs.readFileSync(path.join(dir, 'character.json'), 'utf-8'));
-  return {
-    ...config,
-    id,
-    svg: fs.readFileSync(path.join(dir, config.puppet), 'utf-8'),
-    actions: JSON.parse(fs.readFileSync(path.join(dir, 'actions.json'), 'utf-8')),
-    animations: JSON.parse(fs.readFileSync(path.join(dir, 'animations.json'), 'utf-8')),
-  };
+  const file = path.join(CHARACTERS_DIR, id, 'character.json');
+  return { ...JSON.parse(fs.readFileSync(file, 'utf-8')), id };
 }
 
 function windowSize() {
@@ -83,6 +82,10 @@ function send(channel, payload) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
+function savePosition() {
+  saveSettings({ x: Math.round(pos.x), y: Math.round(pos.y) });
+}
+
 function stepPhysics() {
   const area = workArea();
   const { width } = windowSize();
@@ -107,7 +110,7 @@ function stepPhysics() {
     if (motion.vy === 0 && Math.abs(motion.vx) < 0.4) {
       motion = null;
       send('pet:motion', { type: 'rest' });
-      saveSettings({ x: Math.round(pos.x), y: Math.round(pos.y) });
+      savePosition();
     }
   }
   applyPosition();
@@ -116,14 +119,13 @@ function stepPhysics() {
 function stepWalk() {
   const area = workArea();
   const maxX = area.x + area.width - windowSize().width;
-  const stride = WALK_SPEED * walk.speed;
-  pos.x += walk.dir * stride;
-  walk.remaining -= stride;
+  pos.x += walk.dir * WALK_SPEED;
+  walk.remaining -= WALK_SPEED;
   if (walk.remaining <= 0 || pos.x <= area.x || pos.x >= maxX) {
     pos.x = Math.min(Math.max(pos.x, area.x), maxX);
     walk = null;
     send('pet:motion', { type: 'walk-end' });
-    saveSettings({ x: Math.round(pos.x), y: Math.round(pos.y) });
+    savePosition();
   }
   applyPosition();
 }
@@ -152,7 +154,7 @@ function tick() {
 
 function startFall(vx = 0, vy = 0) {
   if (settings.gravity === false) {
-    saveSettings({ x: Math.round(pos.x), y: Math.round(pos.y) });
+    savePosition();
     send('pet:motion', { type: 'rest' });
     return;
   }
@@ -224,9 +226,21 @@ function setScale(scale) {
 }
 
 function actionItems() {
-  return Object.entries(character.actions)
-    .filter(([, action]) => action.label)
-    .map(([id, action]) => ({ label: action.label, click: () => send('pet:action', id) }));
+  const gestures = Array.from({ length: character.gestureCount }, (_, index) => ({
+    label: `Gesture ${index + 1}`,
+    click: () => send('pet:action', { type: 'gesture', index }),
+  }));
+  const expressions = Object.entries(character.expressions).map(([id, label]) => ({
+    label,
+    click: () => send('pet:action', { type: 'expression', id }),
+  }));
+  return [
+    { label: 'Random Gesture', click: () => send('pet:action', { type: 'gesture' }) },
+    { label: 'Gestures', submenu: gestures },
+    { label: 'Expressions', submenu: expressions },
+    { label: 'Walk Left', click: () => send('pet:action', { type: 'walk', dir: -1 }) },
+    { label: 'Walk Right', click: () => send('pet:action', { type: 'walk', dir: 1 }) },
+  ];
 }
 
 function refreshTray() {
@@ -262,9 +276,24 @@ function refreshTray() {
       },
       { label: 'Show / Hide', click: () => win && (win.isVisible() ? win.hide() : win.show()) },
       { type: 'separator' },
+      { label: 'This content uses sample data owned and copyrighted by Live2D Inc.', enabled: false },
       { label: 'Quit', click: () => app.quit() },
     ]),
   );
+}
+
+function serveAsset(request) {
+  const url = new URL(request.url);
+  const target = path.resolve(LIVE2D_DIR, url.hostname, `.${decodeURIComponent(url.pathname)}`);
+  if (!target.startsWith(LIVE2D_DIR + path.sep) || !fs.existsSync(target)) {
+    return new Response('Not found', { status: 404 });
+  }
+  return new Response(fs.readFileSync(target), {
+    headers: {
+      'content-type': CONTENT_TYPES[path.extname(target)] || 'application/octet-stream',
+      'access-control-allow-origin': '*',
+    },
+  });
 }
 
 ipcMain.handle('pet:get-character', () => character);
@@ -305,20 +334,10 @@ ipcMain.on('pet:jump', () => {
   startFall((Math.random() - 0.5) * 4, -13);
 });
 
-ipcMain.on('pet:walk', (_event, { dir, distance, speed = 1 }) => {
+ipcMain.on('pet:walk', (_event, { dir, distance }) => {
   if (drag || motion || walk) return;
-  walk = {
-    dir: dir < 0 ? -1 : 1,
-    remaining: Math.min(Math.max(distance, 0), 400),
-    speed: Math.min(Math.max(speed, 0.5), 4),
-  };
+  walk = { dir: dir < 0 ? -1 : 1, remaining: Math.min(Math.max(distance, 0), 400) };
   send('pet:motion', { type: 'walk', dir: walk.dir });
-});
-
-ipcMain.on('pet:walk-stop', () => {
-  if (!walk) return;
-  walk = null;
-  saveSettings({ x: Math.round(pos.x), y: Math.round(pos.y) });
 });
 
 ipcMain.on('pet:show-menu', () => {
@@ -335,10 +354,16 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.whenReady().then(() => {
+    if (!fs.existsSync(path.join(LIVE2D_DIR, 'live2dcubismcore.min.js'))) {
+      dialog.showErrorBox('Live2D files missing', 'Run "npm run setup" once, then start the app again.');
+      app.quit();
+      return;
+    }
     if (app.dock) app.dock.hide();
+    protocol.handle('pet-asset', serveAsset);
     settings = loadSettings();
     const ids = listCharacterIds();
-    character = loadCharacter(ids.includes(settings.characterId) ? settings.characterId : 'suzu');
+    character = loadCharacter(ids.includes(settings.characterId) ? settings.characterId : 'haru');
     createWindow();
 
     tray = new Tray(path.join(__dirname, '..', 'build', 'tray.png'));

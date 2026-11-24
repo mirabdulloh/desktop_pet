@@ -1,13 +1,22 @@
 # Desktop Pet
 
-A small anime desktop buddy that lives on your taskbar or Dock. The first character is
-**Suzu**, an original character made for this project: indigo bob, amber eyes, cat-ear
-headphones and a mint hoodie.
+An anime desktop buddy that stands on your taskbar or Dock, powered by real
+[Live2D](https://www.live2d.com/en/) models. The first character is **Haru**, Live2D's
+official sample character, with professional art, animation, expressions and physics.
 
 ## Run it
 
 ```bash
 npm install
+```
+
+Download the Live2D runtime and Haru from Live2D's official sources. Running this means
+you accept the [Free Material License](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html),
+the [Sample Data Terms](https://www.live2d.com/en/learn/sample/model-terms/) and the
+[Proprietary Software License](https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html).
+
+```bash
+npm run setup
 ```
 
 ```bash
@@ -16,60 +25,42 @@ npm start
 
 ## What she does
 
-- Follows your cursor with her head and eyes, and glances around when you're away
-- Blinks, breathes and sways without a visible loop
-- Hair, headphones-side locks and limbs move on springs and react to being moved
-- Walks along the bottom of the screen and plays idle actions
-- Click to wave, rub her head to pet, double-click to jump
-- Drag and throw her, then she falls, squashes and recovers
-- Falls asleep when you're idle
-- Clicks pass through everything except her visible shape
-- Tray menu for character, size, gravity, show/hide and quit
+- 27 professional animations and 8 facial expressions
+- Built-in blinking, breathing and hair and clothing physics
+- Follows your cursor with her head, eyes and body
+- Click to react, rub her head to pet, double-click to jump
+- Drag and throw her, then she falls and lands on the taskbar
+- Plays gestures on her own and falls asleep when you're idle
+- Clicks pass through everything except her visible pixels
+- Right-click her, or use the tray, for gestures, expressions, size and gravity
 
 ## Structure
 
-- `src/main.js`: window, tray, drag, gravity and walking
+- `src/main.js`: window, tray, drag, gravity, walking and local asset serving
 - `src/preload.js`: the small `window.pet` bridge
-- `src/renderer/motion.js`: springs and noise
-- `src/renderer/puppet.js`: drives the layered character rig
-- `src/renderer/app.js`: behavior, moods, clips and speech
-- `characters/<id>/`: `character.json` and a layered `puppet.svg`
+- `src/renderer/app.js`: Live2D rendering, reactions and speech
+- `characters/<id>/character.json`: name, size, expressions, moods and lines
+- `tools/setup-live2d.js`: downloads the runtime and model into the git-ignored `vendor/`
 
-`speak(text)` and `setMood(name)` in `app.js` are the natural entry points for a future AI
-chat: the bubble types the reply and her mouth moves with it.
-
-## Actions
-
-Right-click Suzu, or open **Actions** in the tray, to trigger any action. She also picks
-idle actions herself. Actions live in `characters/suzu/actions.json`:
-
-```json
-"dance": { "clip": "Dance_Loop", "label": "Dance", "loop": true, "hold": 6, "mood": "happy", "idle": true }
-```
-
-To add one, add a line using any clip from the
-[Universal Animation Library](https://opengameart.org/content/universal-animation-library),
-then convert it with the pack's Godot `.glb` file:
-
-```bash
-npm run bake -- /path/to/AnimationLibrary_Godot_Standard.glb
-```
-
-## Add a character
-
-Copy `characters/suzu/` to `characters/<new-id>/`, keep the `data-joint` layers, redraw the
-art, and edit `character.json`. It appears in the tray automatically.
+`speak(text)` and `setMood(name)` in `app.js` are the entry points for future AI chat. The
+speech bubble types the reply and her mouth moves with it.
 
 ## Roadmap
 
 - [ ] AI chat and voice with lip sync
-- [ ] Sitting on window edges
-- [ ] More idle actions and outfits
+- [ ] Name each gesture and group them by mood
+- [ ] Load any Live2D model from the tray
 - [ ] Settings window
 - [ ] Packaged app with `electron-builder`
 
-## License
+## License and credits
 
-Code and the Suzu character art are MIT (see [LICENSE](LICENSE)). Motion data is converted
-from the [Universal Animation Library](https://quaternius.com/packs/universalanimationlibrary.html)
-by Quaternius, released under CC0.
+Project code is MIT (see [LICENSE](LICENSE)). The MIT license does not cover Live2D files.
+
+This content uses sample data owned and copyrighted by Live2D Inc. The sample data are
+utilized in accordance with terms and conditions set by Live2D Inc. This content itself is
+created at the author's sole discretion.
+
+Live2D Cubism Core is under the Live2D Proprietary Software License. Businesses with annual
+revenue of 10 million JPY or more need a separate license from Live2D. Rendering uses
+[pixi-live2d-display](https://github.com/guansss/pixi-live2d-display) (MIT).

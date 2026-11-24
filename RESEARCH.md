@@ -88,6 +88,13 @@ per joint, noise-driven idle motion, anticipation in action clips, fake-3D face 
 gaze with quick eye jumps. The VRM renderer and Marin pack were removed. The app no longer
 depends on third-party character files, so it can be published.
 
+## Decision: ready-made Live2D character
+
+Code-drawn characters could not reach the quality wanted, so the app now uses Live2D's
+official Haru sample with its own art, 27 motions, 8 expressions and physics. This replaces
+the Suzu puppet decision above. Live2D files are fetched by `npm run setup` and stay out of
+the repository. See the [sample data terms](https://www.live2d.com/en/learn/sample/model-terms/).
+
 ## Sources
 - [guansss/pixi-live2d-display](https://github.com/guansss/pixi-live2d-display)
 - [TSKI433/hime-display](https://github.com/TSKI433/hime-display)

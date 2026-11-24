@@ -1,18 +1,23 @@
 {
   "name": "desktop-pet",
-  "version": "0.1.0",
-  "description": "A desktop buddy that lives on your screen, skinned with anime characters. First character: Marin Kitagawa.",
+  "version": "0.4.0",
+  "description": "An anime desktop buddy powered by Live2D models.",
   "main": "src/main.js",
   "private": true,
   "scripts": {
     "build": "esbuild src/renderer/app.js --bundle --format=iife --minify --outfile=src/renderer/bundle.js --log-level=warning",
-    "bake": "node tools/bake-animations.js",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "setup": "node tools/setup-live2d.js"
   },
   "author": "mirabdulloh",
   "license": "MIT",
   "devDependencies": {
     "electron": "^45.4.1",
     "esbuild": "^0.28.2"
+  },
+  "dependencies": {
+    "@pixi/unsafe-eval": "^6.5.10",
+    "pixi-live2d-display": "^0.4.0",
+    "pixi.js": "^6.5.10"
   }
 }
