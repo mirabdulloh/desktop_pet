@@ -87,6 +87,15 @@ other people's requests through a Claude plan, so public releases must use API k
 - In API mode, server-side refusal fallback can retry a declined request on another model.
 - Her personality is the `persona` field in `characters/haru/character.json`.
 
+### What she can open
+
+Ask her in chat, for example "open YouTube and find lofi music".
+
+- **YouTube and Google searches** open right away in your browser.
+- **Websites** (https only) and **installed apps** ask for your approval first.
+- She can't click, type, read pages, or access your files. Each command is checked by the
+  app in `src/actions.js` before anything runs.
+
 ## Roadmap
 
 - [ ] Voice input and spoken replies with lip sync

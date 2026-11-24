@@ -13,6 +13,7 @@ const {
 const path = require('path');
 const fs = require('fs');
 const { Chat } = require('./chat');
+const { ACTION_PROMPT, createActionFilter, parseAction, runAction } = require('./actions');
 
 const CHARACTERS_DIR = path.join(__dirname, '..', 'characters');
 const LIVE2D_DIR = path.join(__dirname, '..', 'vendor', 'live2d');
@@ -501,10 +502,14 @@ ipcMain.handle('pet:save-key', (_event, key) => {
   return { ok: true };
 });
 
-ipcMain.handle('pet:chat-send', (_event, text) => {
+ipcMain.handle('pet:chat-send', async (_event, text) => {
   const message = typeof text === 'string' ? text.trim().slice(0, MAX_CHAT_LENGTH) : '';
   if (!message) return { ok: false, error: 'empty' };
-  return chat.send(character.persona, message, (delta) => send('pet:chat-delta', delta));
+  const filter = createActionFilter((delta) => send('pet:chat-delta', delta));
+  const result = await chat.send(character.persona + ACTION_PROMPT, message, filter.push);
+  if (!result.ok) return result;
+  const action = parseAction(filter.raw());
+  return action ? { ...result, action: await runAction(action) } : result;
 });
 
 ipcMain.on('pet:set-interactive', (_event, value) => {

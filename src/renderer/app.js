@@ -571,7 +571,9 @@ async function sendMessage(text) {
   lastActivity = performance.now();
   if (!chatForm.hidden) chatInput.focus();
 
-  if (result.ok) {
+  if (result.ok && result.action?.message) {
+    speak(result.action.message, 3500);
+  } else if (result.ok) {
     hideTimer = setTimeout(() => bubble.classList.remove('visible'), 4000 + raw.length * 45);
   } else if (result.error === 'auth') {
     showChat(false);
