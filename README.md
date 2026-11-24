@@ -32,7 +32,8 @@ npm start
 - Drag and throw her, then she falls and lands on the taskbar
 - Plays gestures on her own and falls asleep when you're idle
 - Clicks pass through everything except her visible pixels
-- Right-click her, or use the tray, for gestures, expressions, size and gravity
+- Right-click her, or use the tray, for Go Left/Right, Run Left/Right, Go to Top, Come Down,
+  Sleep, Wake Up, gestures, expressions, size and gravity
 
 ## Structure
 

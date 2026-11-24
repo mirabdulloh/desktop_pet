@@ -16,7 +16,7 @@
     "F07": "Shy",
     "F08": "Pouting"
   },
-  "moods": { "happy": "F02", "surprised": "F03", "sad": "F04", "shy": "F07" },
+  "moods": { "happy": "F02", "surprised": "F03", "sad": "F04", "shy": "F07", "peaceful": "F01" },
   "lines": {
     "greet": ["Hello! I'm Haru.", "Oh, welcome back!"],
     "idle": [
@@ -30,7 +30,10 @@
     "pet": ["That's nice...", "You'll mess up my hair!", "Just a little more."],
     "drag": ["Whoa, wait!", "Where are we going?!"],
     "land": ["Oof!", "Please be gentle!"],
-    "wake": ["I was only resting my eyes.", "Huh? I'm awake!"]
+    "wake": ["I was only resting my eyes.", "Huh? I'm awake!"],
+    "sleep": ["Good night...", "Just a short nap..."],
+    "top": ["Nice view from up here!", "Going up!"],
+    "run": ["Coming through!", "Catch me!"]
   },
   "idleActionMs": [9000, 20000],
   "idleLineIntervalMs": [30000, 70000],

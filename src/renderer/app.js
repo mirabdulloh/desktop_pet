@@ -68,6 +68,7 @@ let lastGesture = -1;
 let motion = 'rest';
 let press = null;
 let sleeping = false;
+let deepSleep = false;
 let hardLanding = false;
 let lastActivity = performance.now();
 let nextAction = performance.now() + 7000;
@@ -147,14 +148,23 @@ function burst(symbol, count, className = '') {
   }
 }
 
-function wake() {
+// A requested sleep ignores mouse movement and only ends on a click, drag or menu action.
+function wake(force = false) {
+  if (deepSleep && !force) return;
   lastActivity = performance.now();
   if (!sleeping) return;
   sleeping = false;
+  deepSleep = false;
   squashVelocity = -1.2;
   setMood('surprised', 900);
   sayFrom('wake');
   nextAction = performance.now() + 5000;
+}
+
+function goToSleep(deep) {
+  sleeping = true;
+  deepSleep = deep;
+  setMood('peaceful');
 }
 
 function layout() {
@@ -241,9 +251,9 @@ function updateSprings(dt) {
   }
   if (hop?.stage === 'land') squashTarget = 1 - 0.06 * (1 - hop.t);
   if (motion === 'fall') squashTarget = clamp(1 + velocity.y * 0.0025, 0.98, 1.07);
-  if (motion === 'drag') squashTarget = 1.03;
+  if (motion === 'drag' || motion === 'rise') squashTarget = 1.03;
   hopLift += (liftTarget - hopLift) * Math.min(dt * 30, 1);
-  lean += ((hop ? hop.dir : 0) - lean) * Math.min(dt * 7, 1);
+  lean += ((hop ? hop.dir * (hop.run ? 1.7 : 1) : 0) - lean) * Math.min(dt * 7, 1);
   sleepAmount += ((sleeping ? 1 : 0) - sleepAmount) * Math.min(dt * 2.4, 1);
 
   squashVelocity += ((squashTarget - squash) * 260 - squashVelocity * 11) * dt;
@@ -264,7 +274,7 @@ function updateSprings(dt) {
   }
 
   const footX = innerWidth / 2;
-  const footY = innerHeight - hopLift * 15 * (innerHeight / 440);
+  const footY = innerHeight - hopLift * (hop?.run ? 9 : 15) * (innerHeight / 440);
   const pivot = grabPoint || { x: footX, y: footY };
   const cos = Math.cos(swing);
   const sin = Math.sin(swing);
@@ -276,10 +286,12 @@ function updateSprings(dt) {
 }
 
 function chooseAction(now) {
-  if (motion !== 'rest' || sleeping || press || now < nextAction || !chatForm.hidden) return;
+  const typing = document.activeElement === chatInput && chatInput.value;
+  if (motion !== 'rest' || sleeping || press || now < nextAction || chatBusy || typing) return;
   nextAction = now + between(character.idleActionMs);
   if (Math.random() < 0.25) {
-    window.pet.walk(Math.random() < 0.5 ? -1 : 1, 60 + Math.random() * 160);
+    const gait = Math.random() < 0.2 ? 'run' : 'walk';
+    window.pet.walk(Math.random() < 0.5 ? -1 : 1, 60 + Math.random() * 160, gait);
   } else {
     playGesture();
   }
@@ -327,7 +339,7 @@ function updatePetting(over, dt) {
   if (previousCursor) {
     const moved = Math.hypot(cursor.x - previousCursor.x, cursor.y - previousCursor.y);
     if (moved > 0.5) wake();
-    if (over && !press && motion === 'rest' && model.hitTest(cursor.x, cursor.y).includes('Head')) {
+    if (over && !press && !sleeping && motion === 'rest' && model.hitTest(cursor.x, cursor.y).includes('Head')) {
       petting += moved;
     }
   }
@@ -349,10 +361,9 @@ function update() {
   if (!model) return;
   const now = performance.now();
   const dt = Math.min(app.ticker.deltaMS / 1000, 0.05);
-  if (!sleeping && motion === 'rest' && now - lastActivity > character.sleepAfterMs) {
-    sleeping = true;
+  if (!sleeping && motion === 'rest' && !chatBusy && now - lastActivity > character.sleepAfterMs) {
+    goToSleep(false);
     bubble.classList.remove('visible');
-    setExpression(null);
   }
   if (sleeping && Math.random() < dt * 0.55) burst('z', 1, 'sleep');
   chooseAction(now);
@@ -376,8 +387,12 @@ window.pet.onTick(({ cursor: nextCursor, window: position, hop: nextHop }) => {
 
 window.pet.onMotion(({ type, impact }) => {
   if (!model) return;
-  if (type !== 'walk' && type !== 'walk-end') wake();
-  if (type === 'drag') {
+  if (type !== 'walk' && type !== 'walk-end') wake(true);
+  if (type === 'rise') {
+    motion = 'rise';
+    setMood('happy');
+    sayFrom('top', 1600);
+  } else if (type === 'drag') {
     motion = 'drag';
     document.body.classList.add('dragging');
     squashVelocity = 1.4;
@@ -407,10 +422,29 @@ window.pet.onMotion(({ type, impact }) => {
 
 window.pet.onAction((action) => {
   if (!model || motion === 'drag' || motion === 'fall') return;
-  wake();
+  if (action.type === 'down') {
+    window.pet.comeDown();
+    return;
+  }
+  if (motion === 'rise') return;
+  if (action.type === 'sleep') {
+    if (motion === 'walk') {
+      window.pet.stopWalk();
+      motion = 'rest';
+    }
+    goToSleep(true);
+    sayFrom('sleep', 1200);
+    return;
+  }
+  wake(true);
+  nextAction = performance.now() + between(character.idleActionMs);
   if (action.type === 'gesture') playGesture(action.index);
   else if (action.type === 'expression') setExpression(action.id, 5000);
-  else if (action.type === 'walk') window.pet.walk(action.dir, 180);
+  else if (action.type === 'top') window.pet.goTop();
+  else if (action.type === 'walk') {
+    if (action.run) sayFrom('run', 1200);
+    window.pet.walk(action.dir, action.run ? 420 : 220, action.run ? 'run' : 'walk', true);
+  }
 });
 
 canvas.addEventListener('pointerdown', (event) => {
@@ -436,7 +470,7 @@ function endPress(event) {
   if (wasDragging) {
     window.pet.dragEnd();
   } else if (event.type === 'pointerup' && model) {
-    wake();
+    wake(true);
     const onHead = model.hitTest(event.clientX, event.clientY).includes('Head');
     model.motion('TapBody', undefined, MotionPriority.FORCE);
     setMood(onHead ? 'shy' : 'happy', 2000);
@@ -472,8 +506,8 @@ function showChat(hasKey, focus = true) {
   if (focus) {
     window.pet.focusWindow();
     chatInput.focus();
+    wake(true);
   }
-  wake();
 }
 
 function hideChat() {
@@ -500,6 +534,7 @@ async function saveKey(key) {
 }
 
 async function sendMessage(text) {
+  wake(true);
   chatBusy = true;
   chatSend.disabled = true;
   chatInput.value = '';

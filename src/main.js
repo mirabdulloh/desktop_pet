@@ -10,10 +10,12 @@ const BOUNCE = 0.32;
 const AIR_DRAG = 0.992;
 const FLOOR_FRICTION = 0.8;
 const MAX_THROW_SPEED = 45;
-const HOP_DISTANCE = 30;
-const HOP_CROUCH_FRAMES = 7;
-const HOP_AIR_FRAMES = 18;
-const HOP_LAND_FRAMES = 9;
+const GAITS = {
+  walk: { crouch: 7, air: 18, land: 9, distance: 30 },
+  run: { crouch: 2, air: 10, land: 2, distance: 44 },
+};
+const MAX_WALK_DISTANCE = 900;
+const RISE_PIXELS_PER_FRAME = 7;
 const SCALES = { Small: 0.75, Medium: 1, Large: 1.3 };
 const CONTENT_TYPES = { '.json': 'application/json', '.png': 'image/png', '.moc3': 'application/octet-stream' };
 const MAX_CHAT_LENGTH = 2000;
@@ -30,6 +32,7 @@ let pos = { x: 0, y: 0 };
 let drag = null;
 let motion = null;
 let walk = null;
+let rise = null;
 let interactive = false;
 
 const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
@@ -135,6 +138,11 @@ function stepPhysics() {
   pos.x += motion.vx;
   pos.y += motion.vy;
 
+  if (pos.y < area.y) {
+    pos.y = area.y;
+    motion.vy = Math.abs(motion.vy) * 0.3;
+  }
+
   if (pos.x < area.x || pos.x > area.x + area.width - width) {
     pos.x = Math.min(Math.max(pos.x, area.x), area.x + area.width - width);
     motion.vx *= -0.5;
@@ -158,10 +166,11 @@ function stepPhysics() {
 function stepWalk() {
   const area = workArea();
   const maxX = area.x + area.width - windowSize().width;
-  const hopFrames = HOP_CROUCH_FRAMES + HOP_AIR_FRAMES + HOP_LAND_FRAMES;
-  const inAir = walk.frame >= HOP_CROUCH_FRAMES && walk.frame < HOP_CROUCH_FRAMES + HOP_AIR_FRAMES;
+  const gait = GAITS[walk.gait];
+  const hopFrames = gait.crouch + gait.air + gait.land;
+  const inAir = walk.frame >= gait.crouch && walk.frame < gait.crouch + gait.air;
   if (inAir) {
-    const step = HOP_DISTANCE / HOP_AIR_FRAMES;
+    const step = gait.distance / gait.air;
     pos.x = Math.min(Math.max(pos.x + walk.dir * step, area.x), maxX);
     walk.remaining -= step;
   }
@@ -180,11 +189,41 @@ function stepWalk() {
 function hopState() {
   if (!walk) return null;
   const { frame, dir } = walk;
-  if (frame < HOP_CROUCH_FRAMES) return { stage: 'crouch', t: frame / HOP_CROUCH_FRAMES, dir };
-  if (frame < HOP_CROUCH_FRAMES + HOP_AIR_FRAMES) {
-    return { stage: 'air', t: (frame - HOP_CROUCH_FRAMES) / HOP_AIR_FRAMES, dir };
+  const gait = GAITS[walk.gait];
+  const run = walk.gait === 'run';
+  if (frame < gait.crouch) return { stage: 'crouch', t: frame / gait.crouch, dir, run };
+  if (frame < gait.crouch + gait.air) return { stage: 'air', t: (frame - gait.crouch) / gait.air, dir, run };
+  return { stage: 'land', t: (frame - gait.crouch - gait.air) / gait.land, dir, run };
+}
+
+function stepRise() {
+  rise.frame += 1;
+  const t = Math.min(rise.frame / rise.frames, 1);
+  const eased = t * t * (3 - 2 * t);
+  pos.y = rise.from + (rise.to - rise.from) * eased;
+  applyPosition();
+  if (t >= 1) {
+    rise = null;
+    send('pet:motion', { type: 'rest' });
+    savePosition();
   }
-  return { stage: 'land', t: (frame - HOP_CROUCH_FRAMES - HOP_AIR_FRAMES) / HOP_LAND_FRAMES, dir };
+}
+
+function goToTop() {
+  if (drag || motion || rise) return;
+  walk = null;
+  const to = workArea().y;
+  if (pos.y <= to) return;
+  rise = { from: pos.y, to, frame: 0, frames: Math.max(30, Math.round((pos.y - to) / RISE_PIXELS_PER_FRAME)) };
+  send('pet:motion', { type: 'rise' });
+}
+
+function comeDown() {
+  if (drag || motion) return;
+  walk = null;
+  rise = null;
+  motion = { vx: 0, vy: 0 };
+  send('pet:motion', { type: 'fall' });
 }
 
 function tick() {
@@ -199,6 +238,8 @@ function tick() {
     applyPosition();
   } else if (motion) {
     stepPhysics();
+  } else if (rise) {
+    stepRise();
   } else if (walk) {
     stepWalk();
   }
@@ -272,6 +313,7 @@ function switchCharacter(id) {
   drag = null;
   motion = null;
   walk = null;
+  rise = null;
   if (win) win.destroy();
   createWindow();
   refreshTray();
@@ -302,8 +344,22 @@ function actionItems() {
     { label: 'Random Gesture', click: () => send('pet:action', { type: 'gesture' }) },
     { label: 'Gestures', submenu: gestures },
     { label: 'Expressions', submenu: expressions },
-    { label: 'Walk Left', click: () => send('pet:action', { type: 'walk', dir: -1 }) },
-    { label: 'Walk Right', click: () => send('pet:action', { type: 'walk', dir: 1 }) },
+  ];
+}
+
+function movementItems() {
+  const action = (label, payload) => ({ label, click: () => send('pet:action', payload) });
+  return [
+    action('Go Left', { type: 'walk', dir: -1 }),
+    action('Go Right', { type: 'walk', dir: 1 }),
+    action('Run Left', { type: 'walk', dir: -1, run: true }),
+    action('Run Right', { type: 'walk', dir: 1, run: true }),
+    action('Go to Top', { type: 'top' }),
+    action('Come Down', { type: 'down' }),
+    { type: 'separator' },
+    action('Sleep', { type: 'sleep' }),
+    action('Wake Up', { type: 'wake' }),
+    { type: 'separator' },
   ];
 }
 
@@ -327,7 +383,7 @@ function refreshTray() {
       { type: 'separator' },
       ...characters,
       { type: 'separator' },
-      { label: 'Actions', submenu: actionItems() },
+      { label: 'Actions', submenu: [...movementItems(), ...actionItems()] },
       { label: 'Size', submenu: sizes },
       {
         label: 'Gravity',
@@ -396,6 +452,7 @@ ipcMain.on('pet:drag-start', () => {
   const cursor = screen.getCursorScreenPoint();
   motion = null;
   walk = null;
+  rise = null;
   drag = { offsetX: cursor.x - pos.x, offsetY: cursor.y - pos.y, samples: [] };
   send('pet:motion', { type: 'drag' });
 });
@@ -417,20 +474,35 @@ ipcMain.on('pet:drag-end', () => {
 });
 
 ipcMain.on('pet:jump', () => {
-  if (drag || motion || settings.gravity === false) return;
+  if (drag || motion || rise || settings.gravity === false) return;
   walk = null;
   startFall((Math.random() - 0.5) * 4, -13);
 });
 
-ipcMain.on('pet:walk', (_event, { dir, distance }) => {
-  if (drag || motion || walk) return;
-  walk = { dir: dir < 0 ? -1 : 1, remaining: Math.min(Math.max(distance, 0), 400), frame: 0 };
+ipcMain.on('pet:walk', (_event, { dir, distance, gait, replace }) => {
+  if (drag || motion || rise || (walk && !replace)) return;
+  walk = {
+    dir: dir < 0 ? -1 : 1,
+    remaining: Math.min(Math.max(distance, 0), MAX_WALK_DISTANCE),
+    frame: 0,
+    gait: gait === 'run' ? 'run' : 'walk',
+  };
   send('pet:motion', { type: 'walk', dir: walk.dir });
 });
+
+ipcMain.on('pet:walk-stop', () => {
+  if (!walk) return;
+  walk = null;
+  savePosition();
+});
+
+ipcMain.on('pet:go-top', goToTop);
+ipcMain.on('pet:come-down', comeDown);
 
 ipcMain.on('pet:show-menu', () => {
   if (!win) return;
   Menu.buildFromTemplate([
+    ...movementItems(),
     ...actionItems(),
     { type: 'separator' },
     { label: 'Hide', click: () => win && win.hide() },
