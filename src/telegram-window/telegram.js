@@ -11,6 +11,7 @@ function showMessage(text) {
 
 function renderChats(chats) {
   el('learn').hidden = chats.length === 0;
+  el('learn-all').hidden = chats.length === 0;
   el('chats').replaceChildren(
     ...chats.map((chat) => {
       const row = document.createElement('li');
@@ -37,8 +38,12 @@ function renderChats(chats) {
   );
 }
 
-function renderStyles(styles) {
-  el('no-styles').hidden = styles.length > 0;
+function renderStyles(allStyles) {
+  const styles = allStyles.filter((style) => style.profile);
+  const wordsOnly = allStyles.length - styles.length;
+  el('no-styles').hidden = allStyles.length > 0;
+  el('styles-more').hidden = wordsOnly === 0;
+  el('styles-more').textContent = `Real replies and words are also saved for ${wordsOnly} more ${wordsOnly === 1 ? 'person' : 'people'}.`;
   el('styles').replaceChildren(
     ...styles.map((style) => {
       const row = document.createElement('li');
@@ -79,7 +84,7 @@ function renderStyles(styles) {
       const replies = document.createElement('div');
       replies.className = 'detail';
       replies.textContent = style.replyHabits ? `How you reply: ${style.replyHabits}` : '';
-      stats.textContent += `, ${style.pairCount} replies studied`;
+      stats.textContent += `, ${style.exampleCount} real replies saved`;
       body.append(name, detail, replies, stats, chips);
       row.append(body, remove);
       return row;
@@ -185,6 +190,18 @@ el('learn').addEventListener('click', async () => {
   selected = new Set();
   const learnedText = `Learned ${result.learned} ${result.learned === 1 ? 'chat' : 'chats'}.`;
   showMessage(result.failed ? `${learnedText} ${result.failed} failed, try again later.` : learnedText);
+  render();
+});
+
+el('learn-all').addEventListener('click', async () => {
+  const buttons = ['learn-all', 'learn', 'import'].map(el);
+  buttons.forEach((button) => { button.disabled = true; });
+  const result = await api.learnAll();
+  buttons.forEach((button) => { button.disabled = false; });
+  showMessage(
+    result.error
+      || `Saved your real replies from ${result.saved} chats and wrote ${result.summarized} summaries. Skipped ${result.skipped} unnamed or very small chats.`,
+  );
   render();
 });
 

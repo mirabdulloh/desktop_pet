@@ -12,6 +12,9 @@ const MAX_SHORTCUTS = 40;
 const MAX_WORD_FIXES = 60;
 const MAX_DIFF_TOKENS = 80;
 const MAX_REPLY_PAIRS = 60;
+const EXAMPLES = 'telegram_examples';
+const MAX_EXAMPLES_PER_CHAT = 400;
+const DRAFT_EXAMPLES = 8;
 const MAX_REPLY_PARTS = 3;
 const TELEGRAM_SERVICE_ID = 777000;
 const WORD = /[\p{L}\p{M}]+(?:['’ʻʼ`-][\p{L}\p{M}]+)*['’ʻʼ`]?/gu;
@@ -44,6 +47,7 @@ Rules:
 - Write in the language and script of their chats. If they write Uzbek, write Uzbek even when the request is in another language.
 - Copy their spelling, shortcuts, missing apostrophes, capitalization and punctuation. Never correct them.
 - Prefer words from <their_words>, <common_phrases> and <shortcuts>. Don't invent new abbreviations. If you have no shortcut for a word, write it normally.
+- <examples> are real replies the user wrote to this person before. Match their wording, length and tone most closely.
 - <fixes> are the user's own corrections and always win.
 - When the request answers something the person said, follow <reply_habits>.
 - Match their usual message length.
@@ -74,13 +78,14 @@ function exportSenders(data) {
 }
 
 // Pairs what the other person wrote with how the owner answered, to learn reply habits.
-function replyPairs(messages, owner) {
+function replyPairs(messages, owner, limit = MAX_REPLY_PAIRS) {
   const pairs = [];
   let incoming = [];
   let reply = [];
+  let repliedAt = null;
   const flush = () => {
     if (incoming.length && reply.length) {
-      pairs.push({ them: incoming.slice(-2).join(' / '), me: reply.slice(0, MAX_REPLY_PARTS).join(' / ') });
+      pairs.push({ them: incoming.slice(-2).join(' / '), me: reply.slice(0, MAX_REPLY_PARTS).join(' / '), at: repliedAt });
     }
     incoming = [];
     reply = [];
@@ -91,13 +96,14 @@ function replyPairs(messages, owner) {
     if (!text || text.length > MAX_SAMPLE_LENGTH || containsSecret(text)) continue;
     if (message.from_id === owner) {
       reply.push(text);
+      repliedAt = message.date || null;
     } else {
       if (reply.length) flush();
       incoming.push(text);
     }
   }
   flush();
-  return pairs.slice(-MAX_REPLY_PAIRS);
+  return pairs.slice(-limit);
 }
 
 // The owner's own text teaches style. Other people's messages are used only as reply context and never saved.
@@ -118,8 +124,9 @@ function parseExport(data, ownerId) {
         count: own.length,
         samples: own.slice(-AI_SAMPLE_SIZE),
         analyzed: own.slice(-MAX_ANALYZED_MESSAGES),
-        pairs: replyPairs(chat.messages, owner),
+        examples: replyPairs(chat.messages, owner, MAX_EXAMPLES_PER_CHAT),
       });
+      chats[chats.length - 1].pairs = chats[chats.length - 1].examples.slice(-MAX_REPLY_PAIRS);
     }
   }
   return chats.sort((a, b) => b.count - a.count);
@@ -299,10 +306,14 @@ function readPrompt(name, messages) {
   return `<chat>\n${lines.join('\n')}\n</chat>`;
 }
 
-function draftPrompt(style, name, request) {
+function draftPrompt(style, name, request, examples = []) {
   const parts = [];
+  if (examples.length) {
+    const lines = examples.map((item) => `They wrote: ${item.them}\nYou replied: ${item.me}`);
+    parts.push(`<examples>\n${lines.join('\n\n')}\n</examples>`);
+  }
   if (style) {
-    parts.push(`<style>${style.profile}</style>`);
+    if (style.profile) parts.push(`<style>${style.profile}</style>`);
     if (style.replyHabits) parts.push(`<reply_habits>${style.replyHabits}</reply_habits>`);
     if (style.habits) parts.push(`<habits>${JSON.stringify(style.habits)}</habits>`);
     if (style.words?.length) parts.push(`<their_words>${style.words.join(', ')}</their_words>`);
@@ -333,7 +344,8 @@ class TelegramStyles {
     return (await this.all()).map((item) => ({
       key: item.key,
       name: item.name,
-      profile: item.profile,
+      profile: item.profile || '',
+      exampleCount: item.exampleCount || 0,
       replyHabits: item.replyHabits || '',
       pairCount: item.pairCount || 0,
       sampleCount: item.sampleCount,
@@ -343,8 +355,57 @@ class TelegramStyles {
     }));
   }
 
-  async learn(chat) {
+  // Counts words and saves real reply examples on this Mac's side, with no AI call.
+  async saveLocal(chat) {
     const analysis = analyzeWriting(chat.analyzed || chat.samples, chat.name);
+    const examples = this.memory.collection(EXAMPLES);
+    if (!this.indexesReady) {
+      await examples.createIndex({ key: 1, at: -1 });
+      await examples.createIndex({ them: 'text' }, { default_language: 'none' });
+      this.indexesReady = true;
+    }
+    await examples.deleteMany({ key: chat.key });
+    const items = (chat.examples || []).map((pair) => ({
+      key: chat.key,
+      them: pair.them,
+      me: pair.me,
+      at: pair.at ? new Date(pair.at) : new Date(0),
+    }));
+    if (items.length) await examples.insertMany(items, { ordered: false });
+    await this.memory.collection(STYLES).updateOne(
+      { key: chat.key },
+      {
+        $set: {
+          name: chat.name,
+          words: analysis.words,
+          phrases: analysis.phrases,
+          habits: analysis.habits,
+          exampleCount: items.length,
+          sampleCount: (chat.analyzed || chat.samples).length,
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+    return analysis;
+  }
+
+  async examplesFor(key, request) {
+    if (!key) return [];
+    const examples = this.memory.collection(EXAMPLES);
+    const terms = tokenize(request).slice(0, 12).join(' ');
+    const [similar, recent] = await Promise.all([
+      terms ? examples.find({ key, $text: { $search: terms } }).limit(DRAFT_EXAMPLES / 2).toArray().catch(() => []) : [],
+      examples.find({ key }).sort({ at: -1 }).limit(DRAFT_EXAMPLES).toArray(),
+    ]);
+    const seen = new Set();
+    return [...similar, ...recent]
+      .filter((item) => !seen.has(String(item._id)) && seen.add(String(item._id)))
+      .slice(0, DRAFT_EXAMPLES);
+  }
+
+  async learn(chat) {
+    const analysis = await this.saveLocal(chat);
     const text = [
       `<habits>${JSON.stringify(analysis.habits)}</habits>`,
       `<frequent_words>${analysis.words.join(', ')}</frequent_words>`,
@@ -364,10 +425,6 @@ class TelegramStyles {
           replyHabits: learned.replies,
           pairCount: (chat.pairs || []).length,
           shortcuts: learned.shortcuts,
-          words: analysis.words,
-          phrases: analysis.phrases,
-          habits: analysis.habits,
-          sampleCount: (chat.analyzed || chat.samples).length,
           updatedAt: new Date(),
         },
       },
@@ -377,7 +434,9 @@ class TelegramStyles {
   }
 
   async remove(key) {
-    if (this.memory.connected) await this.memory.collection(STYLES).deleteOne({ key });
+    if (!this.memory.connected) return;
+    await this.memory.collection(STYLES).deleteOne({ key });
+    await this.memory.collection(EXAMPLES).deleteMany({ key });
   }
 
   async removeShortcut(key, short) {
@@ -406,7 +465,8 @@ class TelegramStyles {
     const match = styles.find((item) => item.name.toLocaleLowerCase() === wanted)
       || styles.find((item) => nameMatches(item.name.toLocaleLowerCase(), wanted));
     const name = match?.name || contact;
-    const result = await this.complete(DRAFT_SYSTEM, draftPrompt(match, name, request));
+    const examples = await this.examplesFor(match?.key, request).catch(() => []);
+    const result = await this.complete(DRAFT_SYSTEM, draftPrompt(match, name, request, examples));
     if (!result.ok || !result.text) return { ok: false, error: result.error || 'other' };
     return { ok: true, draft: { key: match?.key || null, contact: name, text: result.text, styled: Boolean(match) } };
   }

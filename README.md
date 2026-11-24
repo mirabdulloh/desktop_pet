@@ -125,7 +125,11 @@ Right-click Haru and choose **Telegram...**, then import `result.json` from Tele
   other person's messages are sent to the AI only as context for your replies.
 - She counts your real words, phrases and habits on this Mac, then learns Uzbek shortcuts
   only when they appear in your messages and their meaning is clear.
-- `Haru.telegram_styles` keeps the style, common words, shortcuts and fixes, not the chats.
+- **Learn all chats** saves up to 400 of your real replies per named chat (20+ messages), each
+  with the short message you answered, in `Haru.telegram_examples`. This uses no AI. Then
+  she writes AI summaries for your 15 biggest chats only, to protect your plan limits.
+- Drafts use your closest real past replies to that person as examples.
+- `Haru.telegram_styles` keeps the style, common words, shortcuts and fixes.
 - Ask in chat, for example "write to Ali that I'll be late". A draft opens for you to edit.
 - When you fix a word in a draft, she remembers that word-level correction for that contact.
 - Click a learned shortcut in the Telegram window to remove it if it is wrong.

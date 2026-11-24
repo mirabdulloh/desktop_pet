@@ -50,6 +50,8 @@ const RECALL_TIMEOUT_MS = 2500;
 const MAX_ENV_FILE_BYTES = 256 * 1024;
 const MAX_EXPORT_BYTES = 200 * 1024 * 1024;
 const MAX_LEARN_CHATS = 10;
+const LEARN_ALL_MIN_MESSAGES = 20;
+const SUMMARY_LIMIT = 15;
 const MAX_DRAFT_LENGTH = 4096;
 const EXPORT_SETTLE_MS = 1500;
 const KEYS = {
@@ -86,6 +88,7 @@ let telegramWindow = null;
 let telegramChats = [];
 let pendingDraft = null;
 let sendingDraft = false;
+let learningAll = false;
 let chatSession = crypto.randomUUID();
 const memory = new Memory();
 
@@ -790,6 +793,33 @@ handleTelegramIpc('telegram:learn', async (keys) => {
     if (result.ok) learned += 1;
   }
   return { learned, failed: chats.length - learned };
+});
+
+// Saves real replies for every named chat without AI, then summarizes only the biggest ones to protect plan limits.
+handleTelegramIpc('telegram:learn-all', async () => {
+  if (learningAll) return { error: 'Already learning.' };
+  if (!memory.connected) return { error: 'Memory is not connected.' };
+  learningAll = true;
+  try {
+    const chats = telegramChats.filter((chat) => chat.name !== 'Unknown' && chat.count >= LEARN_ALL_MIN_MESSAGES);
+    let saved = 0;
+    for (const [index, chat] of chats.entries()) {
+      telegramWindow?.webContents.send('telegram:progress', `Saving your replies ${index + 1} of ${chats.length}: ${chat.name}...`);
+      const ok = await telegramStyles.saveLocal(chat).then(() => true, () => false);
+      if (ok) saved += 1;
+    }
+    const summarized = new Set((await telegramStyles.list()).filter((style) => style.profile).map((style) => style.key));
+    const top = chats.filter((chat) => !summarized.has(chat.key)).slice(0, SUMMARY_LIMIT);
+    let written = 0;
+    for (const [index, chat] of top.entries()) {
+      telegramWindow?.webContents.send('telegram:progress', `Writing summaries ${index + 1} of ${top.length}: ${chat.name}...`);
+      const result = await telegramStyles.learn(chat).catch(() => ({ ok: false }));
+      if (result.ok) written += 1;
+    }
+    return { saved, summarized: written, skipped: telegramChats.length - chats.length };
+  } finally {
+    learningAll = false;
+  }
 });
 
 handleTelegramIpc('telegram:remove', (key) => (typeof key === 'string' ? telegramStyles.remove(key) : null));

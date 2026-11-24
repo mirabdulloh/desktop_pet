@@ -60,12 +60,15 @@
       <h2>Learn from your chats</h2>
       <p class="help">
         In Telegram Desktop, open Settings, Advanced, Export Telegram data. Choose Personal chats, turn off media, and
-        use JSON. Then import <strong>result.json</strong>. She studies your messages and how you reply. Their messages
-        are sent to the AI only as context. Your style, reply habits, words and shortcuts are saved, but not your chats.
+        use JSON. Then import <strong>result.json</strong>. She studies your messages and how you reply.
+        <strong>Learn all chats</strong> saves your real replies, each with the short message you answered, in your
+        Atlas database without using AI, then writes AI summaries for your 15 biggest chats. Unnamed chats and chats
+        with fewer than 20 of your messages are skipped.
       </p>
       <div class="actions">
         <button id="import" class="primary" type="button">Import result.json</button>
         <button id="learn" type="button" hidden>Learn selected</button>
+        <button id="learn-all" type="button" hidden>Learn all chats</button>
       </div>
       <p id="message" class="help" role="status"></p>
       <ul id="chats" class="rows"></ul>
@@ -75,6 +78,7 @@
       <h2>Learned styles</h2>
       <p id="no-styles" class="help">Nothing learned yet.</p>
       <ul id="styles" class="rows"></ul>
+      <p id="styles-more" class="help" hidden></p>
     </section>
     <script src="telegram.js"></script>
   </body>
