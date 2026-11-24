@@ -17,12 +17,43 @@
       <h2 id="draft-title"></h2>
       <label for="draft-text">Check or edit before sending</label>
       <textarea id="draft-text" rows="4"></textarea>
+      <div id="recipient-row" hidden>
+        <label for="recipient">Send to</label>
+        <select id="recipient"></select>
+      </div>
       <p id="draft-note" class="help"></p>
+      <p id="send-error" class="error" role="alert" hidden></p>
       <div class="actions">
-        <button id="draft-open" class="primary" type="button">Open in Telegram</button>
+        <button id="draft-send" class="primary" type="button" hidden>Send</button>
+        <button id="draft-open" type="button">Open in Telegram</button>
         <button id="draft-copy" type="button">Copy</button>
         <button id="draft-discard" type="button">Discard</button>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>Live Telegram</h2>
+      <p id="live-connected" class="help" hidden></p>
+      <form id="live-login" autocomplete="off" hidden>
+        <p class="help">
+          Open my.telegram.org, log in, choose API development tools, and create an app to get your API ID and hash.
+          Your login stays encrypted on this Mac.
+        </p>
+        <label for="api-id">API ID</label>
+        <input id="api-id" inputmode="numeric" />
+        <label for="api-hash">API hash</label>
+        <input id="api-hash" type="password" />
+        <label for="phone">Phone number</label>
+        <input id="phone" placeholder="+998..." />
+        <div class="actions"><button class="primary" type="submit">Log in</button></div>
+      </form>
+      <form id="live-step" autocomplete="off" hidden>
+        <label id="step-label" for="step-value"></label>
+        <input id="step-value" />
+        <div class="actions"><button class="primary" type="submit">Continue</button></div>
+      </form>
+      <p id="live-error" class="error" role="alert" hidden></p>
+      <button id="live-logout" type="button" hidden>Log out</button>
     </section>
 
     <section class="card">

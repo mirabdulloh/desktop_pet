@@ -130,10 +130,20 @@ Right-click Haru and choose **Telegram...**, then import `result.json` from Tele
 - Click a learned shortcut in the Telegram window to remove it if it is wrong.
 - **Open in Telegram** fills in the text. You choose the chat and press Send yourself.
 
+**Live connection (optional):** create an app at [my.telegram.org](https://my.telegram.org),
+then log in from the Telegram window with your API ID, API hash, phone and login code.
+
+- The session is encrypted on this Mac and never stored in Atlas or this repository.
+- She sends only when you click **Send to [name]** on a draft.
+- Ask "what did Ali write?" and she reads the latest 15 messages with that person and sends
+  them to the active AI for a short summary. They are not saved. Bots and Telegram's
+  login-code chat are excluded.
+- **Log out** ends the session on Telegram and deletes it from this Mac.
+
 ## Roadmap
 
 - [ ] Voice input and spoken replies with lip sync
-- [ ] Direct Telegram sending after approval
+- [ ] Reply suggestions for new Telegram messages
 - [ ] Name each gesture and group them by mood
 - [ ] Load any Live2D model from the tray
 - [ ] Settings window

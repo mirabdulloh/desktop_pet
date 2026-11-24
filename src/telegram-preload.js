@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('telegramApi', {
   copy: (text) => ipcRenderer.invoke('telegram:copy', text),
   openInTelegram: (text) => ipcRenderer.invoke('telegram:open', text),
   discard: () => ipcRenderer.invoke('telegram:discard'),
+  login: (details) => ipcRenderer.invoke('telegram:login', details),
+  submitLogin: (value) => ipcRenderer.invoke('telegram:login-submit', value),
+  logout: () => ipcRenderer.invoke('telegram:logout'),
+  send: (key, text) => ipcRenderer.invoke('telegram:send', key, text),
   onUpdated: (callback) => ipcRenderer.on('telegram:updated', () => callback()),
   onProgress: (callback) => ipcRenderer.on('telegram:progress', (_event, text) => callback(text)),
 });

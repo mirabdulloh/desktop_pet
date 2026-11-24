@@ -2,6 +2,8 @@ const api = window.telegramApi;
 const el = (id) => document.getElementById(id);
 const MAX_SELECTED = 10;
 let selected = new Set();
+let currentDraft = null;
+let renderedDraftText;
 
 function showMessage(text) {
   el('message').textContent = text || '';
@@ -86,7 +88,57 @@ function renderDraft(draft) {
   if (!draft) return;
   el('draft-title').textContent = `Draft to ${draft.contact}`;
   el('draft-text').value = draft.text;
-  el('draft-note').textContent = `${draft.styled ? 'Written in your style. Fix any wrong word and she learns it.' : 'No learned style for this contact yet.'} Telegram opens with this text. Choose ${draft.contact} and press Send yourself.`;
+  const recipients = draft.recipients || [];
+  el('recipient-row').hidden = recipients.length === 0;
+  el('draft-send').hidden = recipients.length === 0;
+  el('recipient').replaceChildren(
+    ...recipients.map((person) => {
+      const option = document.createElement('option');
+      option.value = person.key;
+      option.textContent = person.username ? `${person.name} (@${person.username})` : person.name;
+      return option;
+    }),
+  );
+  updateSendLabel(recipients);
+  const styleNote = draft.styled ? 'Written in your style. Fix any wrong word and she learns it.' : 'No learned style for this contact yet.';
+  el('draft-note').textContent = recipients.length
+    ? `${styleNote} Nothing is sent until you press Send.`
+    : `${styleNote} Telegram opens with this text. Choose ${draft.contact} and press Send yourself.`;
+}
+
+function updateSendLabel(recipients) {
+  const person = recipients.find((item) => item.key === el('recipient').value);
+  el('draft-send').textContent = person ? `Send to ${person.name}` : 'Send';
+}
+
+function renderLive(live) {
+  const connected = live.state === 'connected';
+  const asking = live.state === 'code' || live.state === 'password';
+  el('live-connected').hidden = !connected && live.state !== 'connecting';
+  el('live-connected').textContent = connected ? `Connected as ${live.name}.` : 'Connecting...';
+  el('live-login').hidden = live.state !== 'off';
+  el('live-step').hidden = !asking;
+  el('live-logout').hidden = !connected;
+  el('live-error').hidden = !live.error;
+  el('live-error').textContent = live.error || '';
+  if (asking) {
+    const isCode = live.state === 'code';
+    el('step-label').textContent = isCode ? 'Login code from Telegram' : 'Your Telegram two-step password';
+    el('step-value').type = isCode ? 'text' : 'password';
+    if (el('step-value').dataset.step !== live.state) {
+      el('step-value').value = '';
+      el('step-value').dataset.step = live.state;
+      el('step-value').focus();
+    }
+  } else {
+    delete el('step-value').dataset.step;
+    el('step-value').value = '';
+  }
+  if (connected) {
+    el('api-id').value = '';
+    el('api-hash').value = '';
+    el('phone').value = '';
+  }
 }
 
 const learnedNote = (count) => (count ? ` Learned ${count} ${count === 1 ? 'fix' : 'fixes'} from your edit.` : '');
@@ -95,7 +147,13 @@ async function render() {
   const state = await api.state();
   el('status').textContent = state.connected ? 'Memory connected' : 'Memory not connected';
   el('status').className = `status ${state.connected ? 'connected' : 'error'}`;
-  renderDraft(state.draft);
+  currentDraft = state.draft;
+  if (state.draft?.text !== renderedDraftText || !state.draft) {
+    renderedDraftText = state.draft?.text;
+    el('send-error').hidden = true;
+    renderDraft(state.draft);
+  }
+  renderLive(state.live);
   renderChats(state.chats);
   renderStyles(state.styles);
 }
@@ -140,6 +198,45 @@ el('draft-open').addEventListener('click', async () => {
 
 el('draft-discard').addEventListener('click', async () => {
   await api.discard();
+  render();
+});
+
+el('recipient').addEventListener('change', () => updateSendLabel(currentDraft?.recipients || []));
+
+el('draft-send').addEventListener('click', async () => {
+  const button = el('draft-send');
+  button.disabled = true;
+  el('send-error').hidden = true;
+  const result = await api.send(el('recipient').value, el('draft-text').value);
+  button.disabled = false;
+  if (result.ok) {
+    showMessage(`Sent to ${result.name}.`);
+    render();
+  } else {
+    el('send-error').textContent = result.error;
+    el('send-error').hidden = false;
+  }
+});
+
+el('live-login').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const result = await api.login({ apiId: el('api-id').value, apiHash: el('api-hash').value, phone: el('phone').value });
+  if (!result.ok) {
+    el('live-error').textContent = result.error;
+    el('live-error').hidden = false;
+  }
+});
+
+el('live-step').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const value = el('step-value').value;
+  el('step-value').value = '';
+  delete el('step-value').dataset.step;
+  await api.submitLogin(value);
+});
+
+el('live-logout').addEventListener('click', async () => {
+  await api.logout();
   render();
 });
 

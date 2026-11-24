@@ -18,7 +18,17 @@ const fs = require('fs');
 const { Chat } = require('./chat');
 const { ACTION_PROMPT, createActionFilter, parseAction, runAction } = require('./actions');
 const { MEMORY_PROMPT, Memory, findMongoUris } = require('./memory');
-const { TELEGRAM_PROMPT, TelegramStyles, exportSenders, parseDraftCommand, parseExport } = require('./telegram');
+const {
+  READ_SYSTEM,
+  TELEGRAM_PROMPT,
+  TelegramStyles,
+  exportSenders,
+  parseDraftCommand,
+  parseExport,
+  parseReadCommand,
+  readPrompt,
+} = require('./telegram');
+const { TelegramLive, describeError } = require('./telegram-live');
 
 const CHARACTERS_DIR = path.join(__dirname, '..', 'characters');
 const LIVE2D_DIR = path.join(__dirname, '..', 'vendor', 'live2d');
@@ -74,6 +84,7 @@ let memoryWindow = null;
 let telegramWindow = null;
 let telegramChats = [];
 let pendingDraft = null;
+let sendingDraft = false;
 let chatSession = crypto.randomUUID();
 const memory = new Memory();
 
@@ -211,6 +222,48 @@ const chat = new Chat(
 );
 
 const telegramStyles = new TelegramStyles(memory, (system, text) => chat.complete(system, text));
+const telegramSessionPath = () => path.join(app.getPath('userData'), 'telegram-session.bin');
+
+// The session grants full account access, so it stays encrypted on this Mac and never goes to the database.
+const telegramLive = new TelegramLive(
+  {
+    load() {
+      try {
+        return JSON.parse(safeStorage.decryptString(fs.readFileSync(telegramSessionPath())));
+      } catch {
+        return null;
+      }
+    },
+    save(data) {
+      fs.writeFileSync(telegramSessionPath(), safeStorage.encryptString(JSON.stringify(data)), { mode: 0o600 });
+    },
+    clear() {
+      fs.rmSync(telegramSessionPath(), { force: true });
+    },
+  },
+  () => telegramWindow?.webContents.send('telegram:updated'),
+);
+
+async function readTelegramChat(contact) {
+  if (!telegramLive.connected) {
+    openTelegramWindow();
+    return { ok: false, message: 'Connect Telegram first in the window I just opened.' };
+  }
+  try {
+    const matches = await telegramLive.findContacts(contact);
+    if (!matches.length) return { ok: false, message: `I couldn't find ${contact} in your chats.` };
+    if (matches.length > 1) {
+      return { ok: false, message: `Which one: ${matches.map((match) => match.name).join(', ')}?` };
+    }
+    const messages = await telegramLive.readRecent(matches[0].key);
+    if (!messages.length) return { ok: false, message: `There are no text messages with ${matches[0].name}.` };
+    const summary = await chat.complete(READ_SYSTEM, readPrompt(matches[0].name, messages));
+    if (!summary.ok) return { ok: false, message: "Sorry, I couldn't read that chat." };
+    return { ok: true, message: summary.text.replace(/<<[^\n]*?>>/g, '').trim() };
+  } catch (error) {
+    return { ok: false, message: describeError(error) };
+  }
+}
 
 async function hasCredentials() {
   if (fs.existsSync(keyPath()) || process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) return true;
@@ -657,11 +710,15 @@ ipcMain.handle('pet:chat-send', async (_event, text) => {
     .then(() => memory.saveExchange(session, message, spoken))
     .catch((error) => console.warn('Memory save failed:', error.name));
 
+  const readCommand = parseReadCommand(raw);
+  if (readCommand) return { ...result, action: await readTelegramChat(readCommand.contact) };
+
   const draftCommand = parseDraftCommand(raw);
   if (draftCommand) {
     const drafted = await telegramStyles.draft(draftCommand.contact, draftCommand.request).catch(() => ({ ok: false }));
     if (!drafted.ok) return { ...result, action: { ok: false, message: "Sorry, I couldn't write that draft." } };
-    pendingDraft = drafted.draft;
+    const recipients = await telegramLive.findContacts(draftCommand.contact).catch(() => []);
+    pendingDraft = { ...drafted.draft, recipients };
     openTelegramWindow();
     return result;
   }
@@ -672,6 +729,7 @@ ipcMain.handle('pet:chat-send', async (_event, text) => {
 
 handleTelegramIpc('telegram:state', async () => ({
   connected: memory.connected,
+  live: telegramLive.status(),
   styles: await telegramStyles.list().catch(() => []),
   chats: telegramChats.map(({ key, name, count }) => ({ key, name, count })),
   draft: pendingDraft,
@@ -745,6 +803,29 @@ handleTelegramIpc('telegram:copy', async (text) => {
 });
 handleTelegramIpc('telegram:discard', () => {
   pendingDraft = null;
+});
+handleTelegramIpc('telegram:login', (details) => telegramLive.login(details || {}));
+handleTelegramIpc('telegram:login-submit', (value) => telegramLive.submit(value));
+handleTelegramIpc('telegram:logout', () => telegramLive.logout());
+
+// Runs only from the Send button, and only to a recipient resolved for the current draft.
+handleTelegramIpc('telegram:send', async (key, text) => {
+  const recipient = pendingDraft?.recipients?.find((item) => item.key === key);
+  if (!recipient || typeof text !== 'string' || !text.trim() || sendingDraft) {
+    return { ok: false, error: 'Choose who to send it to.' };
+  }
+  sendingDraft = true;
+  try {
+    const value = text.trim().slice(0, MAX_DRAFT_LENGTH);
+    await recordDraftEdit(value);
+    await telegramLive.send(recipient.key, value);
+    pendingDraft = null;
+    return { ok: true, name: recipient.name };
+  } catch (error) {
+    return { ok: false, error: describeError(error) === 'Could not connect to Telegram.' ? 'The message was not sent.' : describeError(error) };
+  } finally {
+    sendingDraft = false;
+  }
 });
 // This link only fills in the text. The user picks the chat and presses Send in Telegram.
 handleTelegramIpc('telegram:open', async (text) => {
@@ -907,9 +988,11 @@ if (!app.requestSingleInstanceLock()) {
       if (savedUri) memory.connect(savedUri).then(writeMemoryStatus);
     }
     fs.watchFile(envPath(), { interval: 1500 }, connectFromEnv);
+    telegramLive.restore();
   });
 
   app.on('will-quit', () => {
+    telegramLive.disconnect();
     fs.unwatchFile(envPath());
     globalShortcut.unregisterAll();
     memory.disconnect();

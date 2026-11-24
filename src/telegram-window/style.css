@@ -22,6 +22,27 @@ textarea {
   resize: vertical;
 }
 
+select {
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+#recipient-row,
+#live-login label,
+#live-step label {
+  margin-top: 8px;
+}
+
+#live-login .actions,
+#live-step .actions {
+  margin-top: 10px;
+}
+
 .primary {
   border-color: var(--accent);
   background: var(--accent);
